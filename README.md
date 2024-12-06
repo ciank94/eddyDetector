@@ -11,11 +11,7 @@ python -m venv .venv
 
 activate and install requirements:
 ```
-python -m pip install -r requirements.txt
-```
-or one by one:
-```
-python -m pip install cdsapi numpy xarray scipy
+python -m pip install cdsapi numpy xarray scipy matplotlib netcdf4 
 ```
 test
 ---
