@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 def plot_eddy_detection(ssh, geos_vel, eddy_borders):
     """
@@ -16,6 +17,10 @@ def plot_eddy_detection(ssh, geos_vel, eddy_borders):
     """
     plt.rcParams.update({'font.size': 12})
     
+    # Ensure the results directory exists
+    results_dir = os.path.join(os.path.dirname(__file__), '..', 'results')
+    os.makedirs(results_dir, exist_ok=True)
+    
     plt.figure(figsize=(10, 8))
     
     # Plot SSH contours
@@ -24,13 +29,13 @@ def plot_eddy_detection(ssh, geos_vel, eddy_borders):
     # Plot geostrophic velocity
     plt.contourf(geos_vel, levels=30, cmap=plt.get_cmap('hot'))
     
-    # Plot eddy borders
+    #Plot eddy borders
     [plt.plot(eddy_borders[i, :, 0], eddy_borders[i, :, 1], c='r') 
-     for i in range(0, eddy_borders.shape[0])]
+    for i in range(0, eddy_borders.shape[0])]
     
     plt.colorbar(label='Geostrophic Velocity')
     plt.title('Eddy Detection Results')
     plt.xlabel('Longitude Index')
     plt.ylabel('Latitude Index')
-    
-    plt.show()
+    plt.savefig(os.path.join(results_dir, 'eddy_detection.png'), dpi=300)
+    return

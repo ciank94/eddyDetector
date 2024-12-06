@@ -22,7 +22,7 @@ if download_f:
                       day=day,
                       version='vdt2021')
 
-folder = './'
+folder = "./"
 filename = folder + 'dt_global_twosat_phy_l4_20170101_vDT2021.nc'
 
 subset_df = subset_netcdf(filepath= filename,
