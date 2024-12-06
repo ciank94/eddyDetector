@@ -81,10 +81,6 @@ def download_cds_data(year: Union[str, List[str]],
     unzip_files()
     return
 
-
-
-
-
 def subset_netcdf(
         filepath: str,
         lon_range: tuple[float, float],

@@ -3,6 +3,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.reader import download_lists, download_cds_data, subset_netcdf
 from src.eddy_methods import calculate_okubo_weiss, interpolate_grid, eddy_filter, slide_detect
+from src.plotting import plot_eddy_detection
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -52,7 +53,6 @@ ssh, geos_vel, ugos, vgos, lat, lon = [np.array(arr) for arr in (df['geos_vel'],
                      block_size = 7,
                      subgrid_size = 3)
 
-plt.contour(ssh, levels = 60, cmap=plt.get_cmap('grey'))
-plt.contourf(geos_vel, levels = 30, cmap=plt.get_cmap('hot'))
-[plt.plot(eddy_borders[i, :, 0], eddy_borders[i, :, 1], c='r') for i in range(0, eddy_borders.shape[0])]
-plt.show()
+
+#==========Section 4: plot=============
+plot_eddy_detection(ssh, geos_vel, eddy_borders)
