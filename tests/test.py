@@ -1,5 +1,8 @@
-from findEddy.src.reader import *
-from findEddy.src.eddy_methods import *
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src.reader import download_lists, download_cds_data, subset_netcdf
+from src.eddy_methods import calculate_okubo_weiss, interpolate_grid, eddy_filter, slide_detect
 import numpy as np
 import matplotlib.pyplot as plt
 
