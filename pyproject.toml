@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "newEddy"
+description = "a package for detecting eddies from altimetry data"
+version = "0.1.0"
+readme = "README.md"
+authors = [
+    { name = "Cian Kelly", email = "cianrkelly23@gmail.com" }
+]

@@ -1,5 +1,5 @@
-from reader import download_lists, download_cds_data, subset_netcdf
-from eddy_methods import calculate_okubo_weiss, interpolate_grid, eddy_filter, slide_detect
+from findEddy.src.reader import *
+from findEddy.src.eddy_methods import *
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -11,14 +11,15 @@ if download_f:
                                       m_start=1,
                                       m_end=1,
                                       d_start=0,
-                                      d_end=3)
+                                      d_end=1)
     print(f"day: {day}")
     download_cds_data(year=year,
                       month=month,
-                      day=day)
+                      day=day,
+                      version='vdt2021')
 
 folder = './'
-filename = folder + 'dt_global_twosat_phy_l4_20170102_vDT2024.nc'
+filename = folder + 'dt_global_twosat_phy_l4_20170101_vDT2021.nc'
 
 subset_df = subset_netcdf(filepath= filename,
          lon_range = (-70, -31),
@@ -46,7 +47,7 @@ ssh, geos_vel, ugos, vgos, lat, lon = [np.array(arr) for arr in (df['geos_vel'],
                      v_geo= vgos,
                      ssh=ssh,
                      block_size = 7,
-                     subgrid_size = 1)
+                     subgrid_size = 3)
 
 plt.contour(ssh, levels = 60, cmap=plt.get_cmap('grey'))
 plt.contourf(geos_vel, levels = 30, cmap=plt.get_cmap('hot'))

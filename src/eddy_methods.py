@@ -1,6 +1,5 @@
 import numpy as np
 import xarray as xr
-from numba import njit
 from typing import Dict, Tuple
 from scipy.ndimage import zoom
 
