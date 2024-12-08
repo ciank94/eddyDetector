@@ -3,10 +3,23 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "newEddy"
-description = "a package for detecting eddies from altimetry data"
+name = "findEddy"
 version = "0.1.0"
+description = "A package for detecting eddies from altimetry data"
 readme = "README.md"
+requires-python = ">=3.6"
 authors = [
     { name = "Cian Kelly", email = "cianrkelly23@gmail.com" }
 ]
+dependencies = [
+    "cdsapi",
+    "numpy",
+    "xarray",
+    "scipy",
+    "matplotlib",
+    "netcdf4",
+    "plotly",
+]
+
+[tool.setuptools]
+packages = ["src"]

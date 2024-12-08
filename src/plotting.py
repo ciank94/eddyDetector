@@ -19,8 +19,16 @@ def plot_eddy_detection(ssh, geos_vel, eddy_borders):
     
     # Ensure the results directory exists
     results_dir = os.path.join(os.path.dirname(__file__), '..', 'results')
+
+    # Create the results directory if it does not already exist.
+    # The exist_ok parameter means that if the directory already exists,
+    # os.makedirs will not raise an OSError. If exist_ok is False (the
+    # default), os.makedirs will raise FileExistsError if the directory
+    # already exists.
     os.makedirs(results_dir, exist_ok=True)
     
+    # Create a new figure with a specified size
+    # The size is given in inches. The default is 8 inches by 6 inches.
     plt.figure(figsize=(10, 8))
     
     # Plot SSH contours

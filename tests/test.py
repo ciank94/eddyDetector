@@ -1,11 +1,23 @@
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.reader import download_lists, download_cds_data, subset_netcdf
-from src.eddy_methods import calculate_okubo_weiss, interpolate_grid, eddy_filter, slide_detect
-from src.plotting import plot_eddy_detection
+# Add the parent directory to Python path so we can import the src package
+#sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src import (
+    download_lists,
+    download_cds_data,
+    subset_netcdf,
+    calculate_okubo_weiss,
+    interpolate_grid,
+    eddy_filter,
+    slide_detect,
+    plot_eddy_detection,
+    __version__
+)
 import numpy as np
 import matplotlib.pyplot as plt
+
+# Print package version
+print(f"Package version: {__version__}")
 
 #==========Section 1: reader=============
 download_f = False
