@@ -1,4 +1,4 @@
-from .eddy_methods import calculate_okubo_weiss, interpolate_grid, eddy_filter, slide_detect
+from .eddy_methods import calculate_okubo_weiss, interpolate_grid, eddy_filter, slide_detect, find_global_minima_with_masking, global_detect
 from .reader import download_lists, download_cds_data, subset_netcdf
 from .plotting import plot_eddy_detection
 # Example of setting a package-level variable

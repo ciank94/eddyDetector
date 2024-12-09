@@ -46,4 +46,5 @@ def plot_eddy_detection(ssh, geos_vel, eddy_borders):
     plt.xlabel('Longitude Index')
     plt.ylabel('Latitude Index')
     plt.savefig(os.path.join(results_dir, 'eddy_detection.png'), dpi=300)
+    plt.show()
     return

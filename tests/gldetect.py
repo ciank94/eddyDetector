@@ -12,6 +12,7 @@ from src import (
     slide_detect,
     plot_eddy_detection,
     find_global_minima_with_masking,
+    global_detect,
     __version__
 )
 import numpy as np
@@ -54,19 +55,18 @@ new_shape = (int(subset_df['ugos'].shape[0]*5), int(subset_df['ugos'].shape[1]*5
 df = interpolate_grid(subset_df, new_shape)
 val_ow, vorticity = calculate_okubo_weiss(np.array(df['ugos']), np.array(df['vgos']))
 ow, cyc_mask, acyc_mask = eddy_filter(val_ow, vorticity)
-[global_minima, global_minima_mask] = find_global_minima_with_masking(ow)
-breakpoint()
+[global_minima, global_minima_mask] = find_global_minima_with_masking(ow, max_eddies=1000, mask_radius=5)
+
 
 #==========Section 3: algorithm=============
 ssh, geos_vel, ugos, vgos, lat, lon = [np.array(arr) for arr in (df['adt'], df['geos_vel'], df['ugos'],
                                                                  df['vgos'], df['latitude'], df['longitude'])]
-[eddy_centres, eddy_borders] = slide_detect(ow=ow,
+[eddy_centres, eddy_borders] = global_detect(ow=ow,
                      mag_uv=geos_vel,
                      u_geo= ugos,
                      v_geo= vgos,
                      ssh=ssh,
-                     block_size = 7,
-                     subgrid_size = 7)
+                     global_minima=global_minima)
 
 
 #==========Section 4: plot=============
