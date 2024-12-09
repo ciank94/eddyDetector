@@ -41,11 +41,11 @@ def slide_detect(ow, mag_uv, u_geo, v_geo, ssh, block_size, subgrid_size):
             #uv_centre_y, uv_centre_x = find_uv_centre(ow_i, mag_uv, slice_yi, slice_xi, subgrid_size)
 
             # now screen this centre:ow
-            [isEddy, eddy_border] = screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo)
+            [isEddy, eddy_border] = screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh)
 
             if isEddy:
                 # expand borders of screened eddies
-                eddy_boundary = expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, eddy_border)
+                eddy_boundary = expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, eddy_border)
 
                 eddy_centres.append([uv_centre_y, uv_centre_x])
                 eddy_borders.append(eddy_boundary)
@@ -55,7 +55,7 @@ def slide_detect(ow, mag_uv, u_geo, v_geo, ssh, block_size, subgrid_size):
     # plt.scatter(potential_centres[:,1], potential_centres[:, 0], c='r')
     return np.array(eddy_centres), np.array(eddy_borders)
 
-def expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, eddy_border):
+def expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, eddy_border):
     """
     expands border of eddies that have passed the first screening;
 
@@ -114,15 +114,31 @@ def expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, eddy_border):
                     break
             if not break_while_loop:
                 ratio_v = uv_border[1::] / uv_border[0:-1]
-                # cosine similarity
-                for i in range(1, len(u_geo_border)):
-                    v1 = [u_geo_border[i], v_geo_border[i]]
-                    v2 = [u_geo_border[i - 1], v_geo_border[i - 1]]
-                    dot_product = np.dot(v1, v2)
-                    mv1 = np.linalg.norm(v1)
-                    mv2 = np.linalg.norm(v2)
-                    cos_theta = dot_product / (mv1 * mv2)
-                    uv_dot[i - 1] = cos_theta
+                # cosine similarity using np.roll
+                v1 = np.array([u_geo_border, v_geo_border]).T
+                v2 = np.roll(v1, 1, axis=0)
+                dot_product = np.sum(v1 * v2, axis=1)
+                mv1 = np.linalg.norm(v1, axis=1)
+                mv2 = np.linalg.norm(v2, axis=1)
+                cos_theta = dot_product / (mv1 * mv2)
+                uv_dot = cos_theta
+
+                # New check for opposite points using np.roll
+                u_geo_rolled = np.roll(u_geo_border, circle_iterations // 2)
+                v_geo_rolled = np.roll(v_geo_border, circle_iterations // 2)
+
+                # Compute cosine similarity between opposite points
+                dot_products_opposite = np.array([np.dot([u1, v1], [u2, v2]) 
+                                              for u1, v1, u2, v2 in zip(u_geo_border, v_geo_border, u_geo_rolled, v_geo_rolled)])
+
+                norms_orig = np.linalg.norm(np.column_stack((u_geo_border, v_geo_border)), axis=1)
+                norms_rolled = np.linalg.norm(np.column_stack((u_geo_rolled, v_geo_rolled)), axis=1)
+                cos_similarities_opposite = dot_products_opposite / (norms_orig * norms_rolled)
+
+                # Count points with cosine similarity close to -1 (opposite directions)
+                # choose a cutoff of approx -0.5
+                symmetry_check = np.sum(np.abs(cos_similarities_opposite)>0.5)     
+                breakpoint()
                 norm_cossim = sum(uv_dot < 0.99)
                 norm_mag = sum((ratio_v < 1 / Sv) | (ratio_v > Sv))
 
@@ -133,7 +149,7 @@ def expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, eddy_border):
 
                 if not break_x_expansion:
                     contour_p = np.array([x_border, y_border]).T
-                    # [contour_p.append((i, j)) for i, j in zip(x_border, y_border)]
+                # [contour_p.append((i, j)) for i, j in zip(x_border, y_border)]
                 else:
                     x_expansion = False
 
@@ -207,7 +223,7 @@ def expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, eddy_border):
 
 
 
-def screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo):
+def screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh):
     """
     function screens centres based on velocity criteria
 
@@ -216,6 +232,7 @@ def screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo):
     :param u_geo:
     :param v_geo:
     :param mag_uv:
+    :param ssh:
     :return: screened centre, and x,y boundaries if eddy goes through screen
     """
 
@@ -228,6 +245,7 @@ def screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo):
     uv_dot = np.zeros(circle_iterations - 1)
     u_geo_border = np.copy(uv_border)
     v_geo_border = np.copy(uv_border)
+    ssh_border = np.copy(uv_border)
     x_border = np.copy(uv_border)
     y_border = np.copy(uv_border)
     switch_radx = True
@@ -246,12 +264,14 @@ def screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo):
             uv_border[circle_it] = mag_uv[int(y_border[circle_it]), int(x_border[circle_it])]
             u_geo_border[circle_it] = u_geo[int(y_border[circle_it]), int(x_border[circle_it])]
             v_geo_border[circle_it] = v_geo[int(y_border[circle_it]), int(x_border[circle_it])]
+            ssh_border[circle_it] = ssh[int(y_border[circle_it]), int(x_border[circle_it])]
         if np.isnan(uv_border[circle_it]):
             break_while_loop = True
             break
 
     if not break_while_loop:
         ratio_v = uv_border[1::] / uv_border[0:-1]
+        ratio_ssh = ssh_border[1::] / ssh_border[0:-1]
         for i in range(1, len(u_geo_border)):
             v1 = [u_geo_border[i], v_geo_border[i]]
             v2 = [u_geo_border[i - 1], v_geo_border[i - 1]]
@@ -262,8 +282,12 @@ def screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo):
             cos_theta = dot_product / (mv1 * mv2)
             uv_dot[i - 1] = cos_theta
             # uv_dot[np.isnan(uv_dot)] = []
+
+        # four conditions for eddy detection
         norm_cossim = sum(uv_dot < 0.99)
         norm_mag = sum((ratio_v < 1 / Sv) | (ratio_v > Sv))
+        norm_ssh = sum((ratio_ssh < 1 / 2) | (ratio_ssh > 2))
+        
 
         if norm_mag > (circle_iterations - 1) / 4 or norm_cossim > (circle_iterations - 1) / 4:
             print(f"breaking with norm cossim: {norm_cossim}")
