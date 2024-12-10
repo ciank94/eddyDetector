@@ -70,4 +70,4 @@ ssh, geos_vel, ugos, vgos, lat, lon = [np.array(arr) for arr in (df['adt'], df['
 
 
 #==========Section 4: plot=============
-plot_eddy_detection(ssh, geos_vel, eddy_borders)
+plot_eddy_detection(ssh, geos_vel, eddy_borders, lat, lon)

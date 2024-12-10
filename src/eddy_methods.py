@@ -2,6 +2,7 @@ import numpy as np
 import xarray as xr
 from typing import Dict, Tuple
 from scipy.ndimage import zoom
+import matplotlib.pyplot as plt
 
 
 def global_detect(ow, mag_uv, u_geo, v_geo, ssh, global_minima):
@@ -18,14 +19,14 @@ def global_detect(ow, mag_uv, u_geo, v_geo, ssh, global_minima):
     """
     
     eddy_centres = np.zeros([len(global_minima), 2])
-    eddy_borders = np.zeros([len(global_minima), 20,  2])
+    eddy_borders = np.zeros([len(global_minima), 30,  2])
 
     # Track number of valid eddies
     valid_eddy_count = 0
 
     for counter, (y, x) in enumerate(global_minima):
         uv_centre_y, uv_centre_x = y, x
-        [isEddy, eddy_border] = screen_centre2(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh)
+        [isEddy, eddy_border] = screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh)
         if isEddy:
             eddy_boundary = expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, eddy_border)
             eddy_centres[counter, :] = [uv_centre_y, uv_centre_x]
@@ -75,11 +76,9 @@ def slide_detect(ow, mag_uv, u_geo, v_geo, ssh, block_size, subgrid_size):
 
             # now screen this centre:ow
             [isEddy, eddy_border] = screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh)
-
             if isEddy:
                 # expand borders of screened eddies
                 eddy_boundary = expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, eddy_border)
-
                 eddy_centres.append([uv_centre_y, uv_centre_x])
                 eddy_borders.append(eddy_boundary)
 
@@ -92,22 +91,16 @@ def slide_detect(ow, mag_uv, u_geo, v_geo, ssh, block_size, subgrid_size):
 def find_global_minima_with_masking(ow_field, max_eddies=500, mask_radius=10):
     """
     Iteratively find global minima in the Okubo-Weiss field, masking previously found points.
-    
-    Parameters:
-    -----------
-    ow_field : numpy.ndarray
-        2D Okubo-Weiss field
-    max_eddies : int, optional
-        Maximum number of eddies to find
-    mask_radius : int, optional
-        Radius of masking around each found minimum
-    
-    Returns:
-    --------
-    global_minima : list
-        List of (y, x) coordinates of global minima
-    masked_ow : numpy.ndarray
-        Okubo-Weiss field with found minima masked
+
+    :param ow_field: 2D Okubo-Weiss field
+    :type ow_field: numpy.ndarray
+    :param max_eddies: Maximum number of eddies to find
+    :type max_eddies: int, optional
+    :param mask_radius: Radius of masking around each found minimum
+    :type mask_radius: int, optional
+    :return: Tuple containing (global_minima, masked_ow) where global_minima is a list of (y, x) coordinates 
+            of global minima and masked_ow is the Okubo-Weiss field with found minima masked
+    :rtype: tuple(list, numpy.ndarray)
     """
     import numpy as np
     from scipy.ndimage import distance_transform_cdt
@@ -143,7 +136,7 @@ def find_global_minima_with_masking(ow_field, max_eddies=500, mask_radius=10):
 
     return global_minima, masked_ow
 
-def expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, eddy_border):
+def expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, eddy_border, lat=None, lon=None):
     """
     expands border of eddies that have passed the first screening;
 
@@ -155,24 +148,11 @@ def expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, eddy_bor
     :param eddy_border:
     :return:
     """
-
-    circle_iterations = 20
-    Sv = 1.1
+    # define contour based on eddy border from screening
+    contour_p = eddy_border
     rad_x = 4
     rad_y = 4
     max_rad = 15
-    uv_border = np.zeros(circle_iterations)
-    uv_dot = np.zeros(circle_iterations - 1)
-    u_geo_border = np.copy(uv_border)
-    v_geo_border = np.copy(uv_border)
-    x_border = np.copy(uv_border)
-    y_border = np.copy(uv_border)
-    ssh_border = np.copy(uv_border)
-    switch_radx = True
-    break_while_loop = False
-    # todo: start with a radius of 3 and break loop if it doesn't pass checks- (not an eddy)- from there it can b
-
-    contour_p = eddy_border
 
     # counted at least at 3- I should count the eddies found with this method;
     x_expansion = True
@@ -180,215 +160,59 @@ def expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, eddy_bor
     break_x_expansion = False
     break_y_expansion = False
 
-    # while (rad_x <= max_rad) & (rad_y <= max_rad):
-    while x_expansion or y_expansion:
-        if (rad_x >= max_rad) or (rad_y >= max_rad):
+    while (rad_x < max_rad) and (rad_y < max_rad) and (x_expansion or y_expansion):
+        if (rad_x >= max_rad) and (rad_y >= max_rad):
             break
         if x_expansion:
             rad_x += 1
-            for circle_it, angle in enumerate(np.linspace(0, 2 * np.pi, circle_iterations)):
-                x_border[circle_it] = uv_centre_x + (rad_x * np.cos(angle))
-                y_border[circle_it] = uv_centre_y + (rad_y * np.sin(angle))
-                if ((x_border[circle_it] <= 0) or (y_border[circle_it] <= 0) or (
-                        int(x_border[circle_it]) >= mag_uv.shape[1]-1)
-                        or (int(y_border[circle_it]) >= mag_uv.shape[0]-1)):
-                    break_while_loop = True
-                    break
-                else:
-                    uv_border[circle_it] = mag_uv[int(y_border[circle_it]), int(x_border[circle_it])]
-                    u_geo_border[circle_it] = u_geo[int(y_border[circle_it]), int(x_border[circle_it])]
-                    v_geo_border[circle_it] = v_geo[int(y_border[circle_it]), int(x_border[circle_it])]
-                    ssh_border[circle_it] = ssh[int(y_border[circle_it]), int(x_border[circle_it])]
-                if np.isnan(uv_border[circle_it]):
-                    break_while_loop = True
-                    break
-            if not break_while_loop:
-                ratio_v = uv_border[1::] / uv_border[0:-1]
-                # cosine similarity using np.roll
-                v1 = np.array([u_geo_border, v_geo_border]).T
-                v2 = np.roll(v1, 1, axis=0)
-                dot_product = np.sum(v1 * v2, axis=1)
-                mv1 = np.linalg.norm(v1, axis=1)
-                mv2 = np.linalg.norm(v2, axis=1)
-                cos_theta = dot_product / (mv1 * mv2)
-                uv_dot = cos_theta
-
-                # New check for opposite points using np.roll
-                u_geo_rolled = np.roll(u_geo_border, circle_iterations // 2)
-                v_geo_rolled = np.roll(v_geo_border, circle_iterations // 2)
-
-                # Compute cosine similarity between opposite points
-                dot_products_opposite = np.array([np.dot([u1, v1], [u2, v2]) 
-                                              for u1, v1, u2, v2 in zip(u_geo_border, v_geo_border, u_geo_rolled, v_geo_rolled)])
-
-                norms_orig = np.linalg.norm(np.column_stack((u_geo_border, v_geo_border)), axis=1)
-                norms_rolled = np.linalg.norm(np.column_stack((u_geo_rolled, v_geo_rolled)), axis=1)
-                cos_similarities_opposite = dot_products_opposite / (norms_orig * norms_rolled)
-
-                # ratio of velocity and ssh on border
-                ratio_ssh = np.abs(ssh_border[1::]) / np.abs(ssh_border[0:-1])
-                ratio_vel = uv_border[1::] / uv_border[0:-1]
-
-                # criteria for eddy
-                symmetry_check = sum(np.abs(cos_similarities_opposite)<0.5)     
-                direction_check = sum(uv_dot < 0.99)
-                velocity_check = sum((ratio_v < 1 / Sv) | (ratio_v > Sv))
-                ssh_check = sum((ratio_ssh < 1 / Sv) | (ratio_ssh > Sv))
-                velocity_cv = (np.std(uv_border)/np.mean(uv_border))*100
-                ssh_cv = (np.std(np.abs(ssh_border)) / np.mean(np.abs(ssh_border)))*100
-
-                # screening based on criteria:
-                criteria_1 = velocity_check/circle_iterations < 0.7
-                criteria_2 = direction_check/circle_iterations < 0.7
-                criteria_3 = symmetry_check/circle_iterations < 0.7
-                criteria_4 = ssh_check/circle_iterations < 0.7
-                criteria_5 = velocity_cv < 50
-                criteria_6 = ssh_cv < 5
-
-                # Criteria 1: velocity ratio between consecutive points
-                # Criteria 2: direction change between consecutive points
-                # Criteria 3: symmetry check for opposite points
-                # Criteria 4: ssh ratio between consecutive points
-                # Criteria 5 and 6: coefficient of variation of velocity and ssh on the border
-
-                if not all([criteria_1, criteria_2, criteria_3, criteria_4, criteria_5, criteria_6]):
-                    print(f"symmetry check: {symmetry_check}")
-                    print(f"direction check: {direction_check}")
-                    print(f"velocity check: {velocity_check}")
-                    print(f"ssh check: {ssh_check}")
-                    print(f"velocity cv: {velocity_cv}")
-                    print(f"ssh cv: {ssh_cv}")                        
-                    break_x_expansion = True
-
-                if not break_x_expansion:
-                    contour_p = np.array([x_border, y_border]).T
-                # [contour_p.append((i, j)) for i, j in zip(x_border, y_border)]
-                else:
-                    x_expansion = False
+            [break_x_expansion, x_border, y_border] = perimeter_check(
+                uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, rad_x, rad_y
+            )
+            if not break_x_expansion:
+                contour_p = np.array([x_border, y_border]).T
+            else:
+                x_expansion = False
 
         if y_expansion:
             rad_y += 1
-            for circle_it, angle in enumerate(np.linspace(0, 2 * np.pi, circle_iterations)):
-                x_border[circle_it] = uv_centre_x + (rad_x * np.cos(angle))
-                y_border[circle_it] = uv_centre_y + (rad_y * np.sin(angle))
-                if ((x_border[circle_it] <= 0) or (y_border[circle_it] <= 0) or (
-                        int(x_border[circle_it]) >= mag_uv.shape[1]-1)
-                        or (int(y_border[circle_it]) >= mag_uv.shape[0]-1)):
-                    break_while_loop = True
-                    break
-                else:
-                    uv_border[circle_it] = mag_uv[int(y_border[circle_it]), int(x_border[circle_it])]
-                    u_geo_border[circle_it] = u_geo[int(y_border[circle_it]), int(x_border[circle_it])]
-                    v_geo_border[circle_it] = v_geo[int(y_border[circle_it]), int(x_border[circle_it])]
-                    ssh_border[circle_it] = ssh[int(y_border[circle_it]), int(x_border[circle_it])]
-                if np.isnan(uv_border[circle_it]):
-                    break_while_loop = True
-                    break
-            if not break_while_loop:
-                ratio_v = uv_border[1::] / uv_border[0:-1]
-                # cosine similarity using np.roll
-                v1 = np.array([u_geo_border, v_geo_border]).T
-                v2 = np.roll(v1, 1, axis=0)
-                dot_product = np.sum(v1 * v2, axis=1)
-                mv1 = np.linalg.norm(v1, axis=1)
-                mv2 = np.linalg.norm(v2, axis=1)
-                cos_theta = dot_product / (mv1 * mv2)
-                uv_dot = cos_theta
+            [break_y_expansion, x_border, y_border] = perimeter_check(
+                uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, rad_x, rad_y
+            )
+            if not break_y_expansion:
+                contour_p = np.array([x_border, y_border]).T
+            else:
+                y_expansion = False
+    return contour_p
 
-                # New check for opposite points using np.roll
-                u_geo_rolled = np.roll(u_geo_border, circle_iterations // 2)
-                v_geo_rolled = np.roll(v_geo_border, circle_iterations // 2)
-
-                # Compute cosine similarity between opposite points
-                dot_products_opposite = np.array([np.dot([u1, v1], [u2, v2]) 
-                                              for u1, v1, u2, v2 in zip(u_geo_border, v_geo_border, u_geo_rolled, v_geo_rolled)])
-
-                norms_orig = np.linalg.norm(np.column_stack((u_geo_border, v_geo_border)), axis=1)
-                norms_rolled = np.linalg.norm(np.column_stack((u_geo_rolled, v_geo_rolled)), axis=1)
-                cos_similarities_opposite = dot_products_opposite / (norms_orig * norms_rolled)
-
-                 # ratio of velocity and ssh on border
-                ratio_ssh = np.abs(ssh_border[1::]) / np.abs(ssh_border[0:-1])
-                ratio_vel = uv_border[1::] / uv_border[0:-1]
-
-                # criteria for eddy
-                symmetry_check = sum(np.abs(cos_similarities_opposite)<0.5)     
-                direction_check = sum(uv_dot < 0.99)
-                velocity_check = sum((ratio_v < 1 / Sv) | (ratio_v > Sv))
-                ssh_check = sum((ratio_ssh < 1 / Sv) | (ratio_ssh > Sv))
-                velocity_cv = (np.std(uv_border)/np.mean(uv_border))*100
-                ssh_cv = (np.std(np.abs(ssh_border)) / np.mean(np.abs(ssh_border)))*100
-
-                # screening based on criteria:
-                criteria_1 = velocity_check/circle_iterations < 0.7
-                criteria_2 = direction_check/circle_iterations < 0.7
-                criteria_3 = symmetry_check/circle_iterations < 0.7
-                criteria_4 = ssh_check/circle_iterations < 0.7
-                criteria_5 = velocity_cv < 50
-                criteria_6 = ssh_cv < 5
-
-                # Criteria 1: velocity ratio between consecutive points
-                # Criteria 2: direction change between consecutive points
-                # Criteria 3: symmetry check for opposite points
-                # Criteria 4: ssh ratio between consecutive points
-                # Criteria 5 and 6: coefficient of variation of velocity and ssh on the border
-
-                if not all([criteria_1, criteria_2, criteria_3, criteria_4, criteria_5, criteria_6]):
-                    print(f"symmetry check: {symmetry_check}")
-                    print(f"direction check: {direction_check}")
-                    print(f"velocity check: {velocity_check}")
-                    print(f"ssh check: {ssh_check}")
-                    print(f"velocity cv: {velocity_cv}")
-                    print(f"ssh cv: {ssh_cv}")                        
-                    break_y_expansion = True
-
-                if not break_y_expansion:
-                    contour_p = np.array([x_border, y_border]).T
-                    # [contour_p.append((i, j)) for i, j in zip(x_border, y_border)]
-                else:
-                    y_expansion = False
-
-        if break_while_loop:
-            break
-
-            #
-            # fig, axs = plt.subplots()
-            # xx = np.arange(0, mag_uv.shape[0], 1)
-            # yy = np.arange(0, mag_uv.shape[1], 1)
-            # [ux, yx] = np.meshgrid(yy, xx)
-            # sk = 10
-            # axs.contourf(mag_uv, levels=50)
-            # axs.quiver(
-            #     ux[::sk, ::sk],
-            #     yx[::sk, ::sk],
-            #     u_geo[::sk, ::sk],
-            #     v_geo[::sk, ::sk],
-            #     edgecolors="k",
-            #     alpha=0.5,
-            #     linewidths=0.01,
-            # )
-            # axs.plot(x_border, y_border)
-            # plt.show()
-            #
-            # breakpoint()
-
-    return np.array(contour_p)
-
-def perimeter_check(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh):
+def perimeter_check(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, rad_x, rad_y):
     """
     Check the perimeter of a potential eddy for various criteria.
 
-    :param uv_centre_y: y-coordinate of eddy center
-    :param uv_centre_x: x-coordinate of eddy center
-    :param mag_uv: magnitude of velocity
-    :param u_geo: zonal component of geostrophic velocity
-    :param v_geo: meridional component of geostrophic velocity
-    :param ssh: sea surface height
-    :return: tuple of (break_while_loop, criteria values)
+    :param uv_centre_y: Y-coordinate of eddy center
+    :type uv_centre_y: int
+    :param uv_centre_x: X-coordinate of eddy center
+    :type uv_centre_x: int
+    :param mag_uv: Magnitude of geostrophic velocity
+    :type mag_uv: numpy.ndarray
+    :param u_geo: U component of geostrophic velocity
+    :type u_geo: numpy.ndarray
+    :param v_geo: V component of geostrophic velocity
+    :type v_geo: numpy.ndarray
+    :param ssh: Sea surface height
+    :type ssh: numpy.ndarray
+    :param rad_x: X radius of ellipse
+    :type rad_x: int
+    :param rad_y: Y radius of ellipse
+    :type rad_y: int
+    :param lat: Latitude coordinates
+    :type lat: numpy.ndarray, optional
+    :param lon: Longitude coordinates
+    :type lon: numpy.ndarray, optional
+    :return: tuple of (break_while_loop, x_border, y_border)
+    :rtype: tuple(bool, numpy.ndarray, numpy.ndarray)
     """
-    circle_iterations = 20
+    circle_iterations = 30
     Sv = 1.1
-    rad_x = rad_y = 3
     break_while_loop = False
     x_border = np.zeros(circle_iterations)
     y_border = np.zeros(circle_iterations)
@@ -434,13 +258,18 @@ def perimeter_check(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh):
     norms_rolled = np.linalg.norm(np.column_stack((u_geo_rolled, v_geo_rolled)), axis=1)
     cos_similarities_opposite = dot_products_opposite / (norms_orig * norms_rolled)
 
+    # ssh rolled:
+    ssh_rolled = np.roll(ssh_border, circle_iterations // 2)
+    ratio_ssh_rolled = np.abs(ssh_rolled) / np.abs(ssh_border)
+
     # ratio of velocity and ssh on border
     ratio_ssh = np.abs(ssh_border[1::]) / np.abs(ssh_border[0:-1])
     ratio_vel = uv_border[1::] / uv_border[0:-1]
 
     # criteria for eddy
     #todo: focus on symmetry checks- ssh and velocity
-    symmetry_check = sum(np.abs(cos_similarities_opposite)<0.5)     
+    velocity_symmetry_check = sum(np.abs(cos_similarities_opposite)<0.5) 
+    ssh_symmetry_check = sum((ratio_ssh_rolled < 1/1.5) | (ratio_ssh_rolled > 1.5))    
     direction_check = sum(uv_dot < 0.99)
     velocity_check = sum((ratio_vel < 1 / Sv) | (ratio_vel > Sv))
     ssh_check = sum((ratio_ssh < 1 / Sv) | (ratio_ssh > Sv))
@@ -453,23 +282,28 @@ def perimeter_check(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh):
     # 3. symmetry check for opposite points
     # 4. ssh ratio between consecutive points
     # 5 and 6: coefficient of variation of velocity and ssh on the border
-    criteria_1 = velocity_check/circle_iterations < 0.7
-    criteria_2 = direction_check/circle_iterations < 0.7
-    criteria_3 = symmetry_check/circle_iterations < 0.7
-    criteria_4 = ssh_check/circle_iterations < 0.7
-    criteria_5 = velocity_cv < 50
-    criteria_6 = ssh_cv < 5
+    criteria_1 = velocity_check/circle_iterations < 0.5
+    criteria_2 = direction_check/circle_iterations < 0.9
+    criteria_3 = velocity_symmetry_check/circle_iterations < 0.5
+    criteria_4 = ssh_check/circle_iterations < 0.9
+    criteria_5 = ssh_symmetry_check/circle_iterations < 0.5
+    criteria_6 = ssh_cv < 90
+
+    # todo: add eddy_identifier
+    if rad_x == 10 and rad_y == 10:
+        plot_eddy(uv_centre_y, uv_centre_x, mag_uv, ssh, rad_x, rad_y, x_border, y_border, u_geo_border, v_geo_border)
+        breakpoint()
+
     if not all([criteria_1, criteria_2, criteria_3, criteria_4, criteria_5, criteria_6]):
-        print(f"symmetry check: {symmetry_check}")
-        print(f"direction check: {direction_check}")
-        print(f"velocity check: {velocity_check}")
-        print(f"ssh check: {ssh_check}")
-        print(f"velocity cv: {velocity_cv}")
-        print(f"ssh cv: {ssh_cv}")                        
+        # print(f"symmetry check: {symmetry_check}")
+        # print(f"direction check: {direction_check}")
+        # print(f"velocity check: {velocity_check}")
+        # print(f"ssh check: {ssh_check}")
+        # print(f"velocity cv: {velocity_cv}")
+        # print(f"ssh cv: {ssh_cv}")                        
         return True, None, None
 
     return False, np.array(x_border), np.array(y_border)
-
 
 
 def screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh):
@@ -486,117 +320,8 @@ def screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh):
     """
 
     is_eddy = False
-    circle_iterations = 30
-    Sv = 1.1
-    rad_x = rad_y = 3
-    max_rad = 15
-    uv_border = np.zeros(circle_iterations)
-    uv_dot = np.zeros(circle_iterations - 1)
-    u_geo_border = np.copy(uv_border)
-    v_geo_border = np.copy(uv_border)
-    ssh_border = np.copy(uv_border)
-    x_border = np.copy(uv_border)
-    y_border = np.copy(uv_border)
-    switch_radx = True
-    break_while_loop = False
-    # todo: start with a radius of 3 and break loop if it doesn't pass checks- (not an eddy)- from there it can be
-    radius = 3
-    contour_p = []
-    for circle_it, angle in enumerate(np.linspace(0, 2 * np.pi, circle_iterations)):
-        x_border[circle_it] = uv_centre_x + (rad_x * np.cos(angle))
-        y_border[circle_it] = uv_centre_y + (rad_y * np.sin(angle))
-        if ((x_border[circle_it] <= 0) or (y_border[circle_it] <= 0) or (
-            int(x_border[circle_it]) >= mag_uv.shape[1]-1)
-            or (int(y_border[circle_it]) >= mag_uv.shape[0]-1)):
-            break_while_loop = True
-            break
-        else:
-            uv_border[circle_it] = mag_uv[int(y_border[circle_it]), int(x_border[circle_it])]
-            u_geo_border[circle_it] = u_geo[int(y_border[circle_it]), int(x_border[circle_it])]
-            v_geo_border[circle_it] = v_geo[int(y_border[circle_it]), int(x_border[circle_it])]
-            ssh_border[circle_it] = ssh[int(y_border[circle_it]), int(x_border[circle_it])]
-        if np.isnan(uv_border[circle_it]):
-            break_while_loop = True
-            break
-    if not break_while_loop:
-        ratio_v = uv_border[1::] / uv_border[0:-1]
-        # cosine similarity using np.roll
-        v1 = np.array([u_geo_border, v_geo_border]).T
-        v2 = np.roll(v1, 1, axis=0)
-        dot_product = np.sum(v1 * v2, axis=1)
-        mv1 = np.linalg.norm(v1, axis=1)
-        mv2 = np.linalg.norm(v2, axis=1)
-        cos_theta = dot_product / (mv1 * mv2)
-        uv_dot = cos_theta
-
-        # New check for opposite points using np.roll
-        u_geo_rolled = np.roll(u_geo_border, circle_iterations // 2)
-        v_geo_rolled = np.roll(v_geo_border, circle_iterations // 2)
-
-        # Compute cosine similarity between opposite points
-        dot_products_opposite = np.array([np.dot([u1, v1], [u2, v2]) 
-                                          for u1, v1, u2, v2 in zip(u_geo_border, v_geo_border, u_geo_rolled, v_geo_rolled)])
-
-        norms_orig = np.linalg.norm(np.column_stack((u_geo_border, v_geo_border)), axis=1)
-        norms_rolled = np.linalg.norm(np.column_stack((u_geo_rolled, v_geo_rolled)), axis=1)
-        cos_similarities_opposite = dot_products_opposite / (norms_orig * norms_rolled)
-
-        # ratio of velocity and ssh on border
-        ratio_ssh = np.abs(ssh_border[1::]) / np.abs(ssh_border[0:-1])
-        ratio_vel = uv_border[1::] / uv_border[0:-1]
-
-        # criteria for eddy
-        symmetry_check = sum(np.abs(cos_similarities_opposite)<0.5)     
-        direction_check = sum(uv_dot < 0.99)
-        velocity_check = sum((ratio_v < 1 / Sv) | (ratio_v > Sv))
-        ssh_check = sum((ratio_ssh < 1 / Sv) | (ratio_ssh > Sv))
-        velocity_cv = (np.std(uv_border)/np.mean(uv_border))*100
-        ssh_cv = (np.std(np.abs(ssh_border)) / np.mean(np.abs(ssh_border)))*100
-
-        # screening based on criteria:
-        criteria_1 = velocity_check/circle_iterations < 0.7
-        criteria_2 = direction_check/circle_iterations < 0.7
-        criteria_3 = symmetry_check/circle_iterations < 0.7
-        criteria_4 = ssh_check/circle_iterations < 0.7
-        criteria_5 = velocity_cv < 50
-        criteria_6 = ssh_cv < 5
-
-        # Criteria 1: velocity ratio between consecutive points
-        # Criteria 2: direction change between consecutive points
-        # Criteria 3: symmetry check for opposite points
-        # Criteria 4: ssh ratio between consecutive points
-        # Criteria 5 and 6: coefficient of variation of velocity and ssh on the border
-
-        if not all([criteria_1, criteria_2, criteria_3, criteria_4, criteria_5, criteria_6]):
-            print(f"symmetry check: {symmetry_check}")
-            print(f"direction check: {direction_check}")
-            print(f"velocity check: {velocity_check}")
-            print(f"ssh check: {ssh_check}")
-            print(f"velocity cv: {velocity_cv}")
-            print(f"ssh cv: {ssh_cv}")                        
-            break_while_loop = True
-    
-    if not break_while_loop:
-        [contour_p.append((i, j)) for i, j in zip(x_border, y_border)]
-        is_eddy = True
-
-    return is_eddy, np.array(contour_p)
-
-def screen_centre2(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh):
-    """
-    function screens centres based on velocity criteria
-
-    :param uv_centre_x:
-    :param uv_centre_y:
-    :param u_geo:
-    :param v_geo:
-    :param mag_uv:
-    :param ssh:
-    :return: screened centre, and x,y boundaries if eddy goes through screen
-    """
-
-    is_eddy = False
     break_while_loop = False 
+    rad_x = rad_y = 3
     contour_p = []
     [break_while_loop, x_border, y_border] = perimeter_check(    
         uv_centre_y,
@@ -604,9 +329,8 @@ def screen_centre2(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh):
         mag_uv,
         u_geo,
         v_geo,
-        ssh)
+        ssh, rad_x, rad_y)
 
-    
     if not break_while_loop:
         contour_p = [(x, y) for x, y in zip(x_border, y_border)]
         #[contour_p.append((i, j)) for i, j in zip(x_border, y_border)]
@@ -725,6 +449,54 @@ def calculate_okubo_weiss(u_geo, v_geo):
     ow = (dux - dvy) ** 2 + (dvx + duy) ** 2 - vorticity ** 2  # Sn**2 + Ss**2 + ω**2
     return ow, vorticity
 
+def plot_eddy(uv_centre_y, uv_centre_x, mag_uv, ssh, rad_x, rad_y, x_border, y_border, u_geo_border, v_geo_border):
+    """Plot the detected eddy with SSH contours and velocity magnitude.
+
+    :param uv_centre_y: Y-coordinate of eddy center
+    :type uv_centre_y: int
+    :param uv_centre_x: X-coordinate of eddy center
+    :type uv_centre_x: int
+    :param mag_uv: Magnitude of geostrophic velocity
+    :type mag_uv: numpy.ndarray
+    :param ssh: Sea surface height
+    :type ssh: numpy.ndarray
+    :param rad_x: X radius of ellipse
+    :type rad_x: int
+    :param rad_y: Y radius of ellipse
+    :type rad_y: int
+    :param x_border: X border coordinates of the eddy
+    :type x_border: numpy.ndarray
+    :param y_border: Y border coordinates of the eddy
+    :type y_border: numpy.ndarray
+    """     
+    # Define plot region around eddy
+    margin = max(rad_x, rad_y) + 5
+    y_min = max(0, int(uv_centre_y - margin))
+    y_max = min(mag_uv.shape[0], int(uv_centre_y + margin))
+    x_min = max(0, int(uv_centre_x - margin))
+    x_max = min(mag_uv.shape[1], int(uv_centre_x + margin))
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Plot SSH contours and velocity magnitude in the region
+    plt.contour(x_min + np.arange(x_max-x_min), y_min + np.arange(y_max-y_min), 
+                   ssh[y_min:y_max, x_min:x_max], levels=60, colors='grey', alpha=0.5)
+    g_vel = plt.contourf(x_min + np.arange(x_max-x_min), y_min + np.arange(y_max-y_min),
+                    mag_uv[y_min:y_max, x_min:x_max], levels=30, cmap='hot')
+        
+    # Plot eddy border and center
+    plt.plot(x_border, y_border, 'w-o', linewidth=2, markersize=4)
+    plt.plot(uv_centre_x, uv_centre_y, 'wo', markersize=8)
+    plt.quiver(x_border[::2], y_border[::2], u_geo_border[::2], v_geo_border[::2],
+               color='k', scale=10, alpha=0.7)
+        
+    fig.colorbar(g_vel, ax=ax, label='Geostrophic Velocity')
+    plt.title('Eddy Detection Check')
+    plt.xlabel('Grid X')
+    plt.ylabel('Grid Y')
+    plt.show()
+    return
+
 def interpolate_grid(subset_df: Dict[str, xr.DataArray],
                      new_shape: Tuple[int, int]):
     """
@@ -770,4 +542,32 @@ def interpolate_grid(subset_df: Dict[str, xr.DataArray],
 
     return new_df
 
+def check_central_velocity(center_y, center_x, mag_uv, central_radius, outer_radius):
+    """Check for low velocity in the center and increasing velocity outward."""
+    # Define central and outer neighborhoods
+    central_y_min = max(0, center_y - central_radius)
+    central_y_max = min(mag_uv.shape[0], center_y + central_radius + 1)
+    central_x_min = max(0, center_x - central_radius)
+    central_x_max = min(mag_uv.shape[1], center_x + central_radius + 1)
+
+    outer_y_min = max(0, center_y - outer_radius)
+    outer_y_max = min(mag_uv.shape[0], center_y + outer_radius + 1)
+    outer_x_min = max(0, center_x - outer_radius)
+    outer_x_max = min(mag_uv.shape[1], center_x + outer_radius + 1)
+
+    # Extract velocity values
+    central_velocity = mag_uv[central_y_min:central_y_max, central_x_min:central_x_max]
+    outer_velocity = mag_uv[outer_y_min:outer_y_max, outer_x_min:outer_x_max]
+
+    # Check if central velocity is lower than a threshold
+    central_avg_velocity = np.mean(central_velocity)
+    if central_avg_velocity > some_threshold:  # Define your threshold for low velocity
+        return False
+
+    # Check if velocity increases outward
+    outer_avg_velocity = np.mean(outer_velocity)
+    if outer_avg_velocity <= central_avg_velocity:  # Ensure outer is greater than central
+        return False
+
+    return True
 
