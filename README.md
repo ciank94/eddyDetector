@@ -9,7 +9,7 @@ A Python package for efficient eddy detection in oceanographic data using a hybr
 
 ### 1. Clone the Repository
 ```bash
-git clone [repository-url]
+git clone git@github.com:ciank94/findEddy.git
 cd findEddy
 ```
 
@@ -24,10 +24,12 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install Dependencies
+### 3. Install in development mode
+
 ```bash
-pip install -e /path/to/findEddy
+ python -m pip install -e path/to/findEddy
 ```
+### 4. Install dependencies
 
 ```bash
 python -m pip install cdsapi numpy xarray scipy matplotlib netcdf4 plotly
