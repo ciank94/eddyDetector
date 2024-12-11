@@ -26,6 +26,10 @@ source .venv/bin/activate
 
 ### 3. Install Dependencies
 ```bash
+pip install -e /path/to/findEddy
+```
+
+```bash
 python -m pip install cdsapi numpy xarray scipy matplotlib netcdf4 plotly
 ```
 
@@ -57,18 +61,15 @@ python -m pip install cdsapi numpy xarray scipy matplotlib netcdf4 plotly
 
 ```python
 from src import (
-    download_lists,
-    download_cds_data,
-    subset_netcdf,
-    calculate_okubo_weiss,
-    interpolate_grid,
-    eddy_filter,
-    plot_eddy_detection
+   EddyMethods,
+   Reader,
+   Plotting,
+   __version__
 )
 
 # Download and process data
-year, month, day = download_lists(y_start=2017, y_end=2017, m_start=1, m_end=1)
-download_cds_data(year=year, month=month, day=day)
+year, month, day = Reader.download_lists(y_start=2017, y_end=2017, m_start=1, m_end=1)
+Reader.download_cds_data(year=year, month=month, day=day)
 
 # Detect and visualize eddies
 # See test.py for complete workflow example

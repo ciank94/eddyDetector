@@ -11,15 +11,16 @@ requires-python = ">=3.6"
 authors = [
     { name = "Cian Kelly", email = "cianrkelly23@gmail.com" }
 ]
-dependencies = [
-    "cdsapi",
-    "numpy",
-    "xarray",
-    "scipy",
-    "matplotlib",
-    "netcdf4",
-    "plotly",
-]
+dependencies = []
 
 [tool.setuptools]
-packages = ["src"]
+packages = ["eddy_source"]
+
+[tool.poetry.dependencies]
+cdsapi = "0.5.0"
+numpy = "1.26.2"
+xarray = "2023.12.0"
+scipy = "1.10.0"
+matplotlib = "3.8.2"
+netcdf4 = "1.6.2"
+plotly = "5.14.1"

@@ -2,12 +2,10 @@ import sys
 import os
 # Add the parent directory to Python path so we can import the src package
 #sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src import (
+from eddy_source import (
     EddyMethods,
-    download_lists,
-    download_cds_data,
-    subset_netcdf,
-    plot_eddy_detection,
+    Reader,
+    Plotting,
     __version__
 )
 import numpy as np
@@ -34,7 +32,7 @@ if download_f:
 folder = "./"
 filename = folder + 'dt_global_twosat_phy_l4_20170101_vDT2021.nc'
 
-subset_df = subset_netcdf(filepath= filename,
+subset_df = Reader.subset_netcdf(filepath= filename,
          lon_range = (-70, -31),
          lat_range = (-73, -50),
         time_index= 0,
@@ -65,4 +63,4 @@ ssh, geos_vel, ugos, vgos, lat, lon = [np.array(arr) for arr in (df['adt'], df['
 
 
 #==========Section 4: plot=============
-plot_eddy_detection(ssh, geos_vel, eddy_borders, lat, lon)
+Plotting.plot_eddy_detection(ssh, geos_vel, eddy_borders, lat, lon)
