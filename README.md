@@ -10,7 +10,6 @@ A Python package for efficient eddy detection in oceanographic data using a hybr
 ### 1. Clone the Repository
 ```bash
 git clone git@github.com:ciank94/findEddy.git
-cd findEddy
 ```
 
 ### 2. Set Up Virtual Environment

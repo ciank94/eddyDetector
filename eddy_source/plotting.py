@@ -7,6 +7,7 @@ class Plotting:
     def __init__(self):
         pass
     
+
     @staticmethod
     def plot_eddy_detection(ssh, geos_vel, eddy_borders, lat, lon):
         """Plot the SSH contours, geostrophic velocity, and eddy borders.
@@ -39,23 +40,29 @@ class Plotting:
         plt.figure(figsize=(10, 8))
         
         # Plot SSH contours
-        plt.contour(lon, lat, ssh, levels=60, cmap=plt.get_cmap('grey'))
+        plt.contour(lon, lat, ssh, levels=60, colors='gray', alpha=0.5)
         
         # Plot geostrophic velocity
-        plt.contourf(lon, lat, geos_vel, levels=30, cmap=plt.get_cmap('hot'))
+        plt.contourf(lon, lat, geos_vel, levels=30, cmap='hot')
+        plt.colorbar(label='Geostrophic Velocity')
         
         #Plot eddy borders
         # Create grid coordinates for interpolation
         x_grid = np.arange(geos_vel.shape[1])
         y_grid = np.arange(geos_vel.shape[0])
         
-        for i in range(0, eddy_borders.shape[0]):
+        for eddy in eddy_borders:
+            # Plot each eddy's center and border
+            center = eddy['center']
+            border = eddy['border']
+            #plt.plot(center[1], center[0], 'wx', markersize=8)  # Eddy center (lon, lat)
+            #plt.plot(border[:, 1], border[:, 0], 'w-', linewidth=2)  # Eddy boundary (lon, lat)
+
             # Interpolate x and y coordinates to lon/lat independently
-            border_x = np.interp(eddy_borders[i, :, 0], x_grid, lon)
-            border_y = np.interp(eddy_borders[i, :, 1], y_grid, lat)
+            border_x = np.interp(border[:, 1], x_grid, lon)
+            border_y = np.interp(border[:, 0], y_grid, lat)
             plt.plot(border_x, border_y, c='w')
         
-        plt.colorbar(label='Geostrophic Velocity')
         plt.title('Eddy Detection Results')
         plt.xlabel('Longitude')
         plt.ylabel('Latitude')

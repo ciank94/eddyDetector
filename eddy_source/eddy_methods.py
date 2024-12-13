@@ -3,43 +3,64 @@ import xarray as xr
 from typing import Dict, Tuple
 from scipy.ndimage import zoom
 import matplotlib.pyplot as plt
+from scipy.interpolate import RegularGridInterpolator
+from matplotlib.path import Path
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
 class EddyMethods:
     def __init__(self):
         pass
 
     @staticmethod
-    def global_detect(ow, mag_uv, u_geo, v_geo, ssh, global_minima):
+    def global_detect(ow, mag_uv, u_geo, v_geo, ssh, max_eddies=500):
         """
         Detect eddies using global minima in the Okubo-Weiss field.
+        Invalid centers are screened out by masking the point.
+        Valid centers result in masking the entire eddy region.
 
         :param ow: Okubo-Weiss parameter for 2D field
         :param mag_uv: net velocity for 2D field
         :param u_geo: zonal component of geostrophic velocity (2D)
         :param v_geo: meridional component of geostrophic velocity (2D)
         :param ssh: sea surface height (2D)
-        :param global_minima: list of global minima coordinates
-        :return: eddy_centres, eddy_borders
+        :param max_eddies: maximum number of eddies to detect (default: 500)
+        :return: List of detected eddy information dictionaries
         """
+        detected_eddies = []
+        current_ow = ow.copy()
+        counter = -1
         
-        eddy_centres = np.zeros([len(global_minima), 2])
-        eddy_borders = np.zeros([len(global_minima), 30,  2])
-
-        # Track number of valid eddies
-        valid_eddy_count = 0
-
-        for counter, (y, x) in enumerate(global_minima):
-            uv_centre_y, uv_centre_x = y, x
-            [isEddy, eddy_border] = EddyMethods.screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh)
+        while len(detected_eddies) < max_eddies and counter < 1000:
+            counter += 1
+            # Find the current global minimum
+            if np.all(np.isnan(current_ow)):
+                break
+                
+            # Get the indices of the minimum value, ignoring NaNs
+            flat_idx = np.nanargmin(current_ow)
+            y, x = np.unravel_index(flat_idx, current_ow.shape)
+            
+            # Try to detect an eddy at this minimum
+            [isEddy, eddy_info, new_ow] = EddyMethods.detect_and_mask_eddy(
+                current_ow, y, x, mag_uv, u_geo, v_geo, ssh, radius=7, m_points=32
+            )
+            
             if isEddy:
-                eddy_boundary = EddyMethods.expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, eddy_border)
-                eddy_centres[counter, :] = [uv_centre_y, uv_centre_x]
-                eddy_borders[counter, :, :] = eddy_boundary
-                valid_eddy_count += 1
-
-        print(f"valid eddy count: {valid_eddy_count}")
-        return (eddy_centres[:valid_eddy_count, :], 
-                eddy_borders[:valid_eddy_count, :, :])
+                # Valid center - mask the entire eddy region
+                current_ow = new_ow
+                detected_eddies.append(eddy_info)
+                #EddyMethods.plot_eddy_info(ssh, mag_uv, eddy_info)
+                logging.info(f"Detected eddy at: ({y}, {x})")
+            else:
+                # Invalid center - just mask this point
+                current_ow[y-2:y+2, x-2:x+2] = np.nan
+                logging.info(f"Screened out center at: ({y}, {x})")
+        
+        print(f"Found {len(detected_eddies)} eddies")
+        return detected_eddies
 
     @staticmethod
     def slide_detect(ow, mag_uv, u_geo, v_geo, ssh, block_size, subgrid_size):
@@ -59,7 +80,7 @@ class EddyMethods:
         """
         # slide over a region
         # Calculate number of blocks in each dimension
-        slice_y, slice_x = block_indices(ow, block_size)
+        slice_y, slice_x = EddyMethods.block_indices(ow, block_size)
         eddy_centres = []
         eddy_borders = []
         for counter, (slice_yi, slice_xi) in enumerate(zip(slice_y, slice_x)):
@@ -74,15 +95,15 @@ class EddyMethods:
             else:
                 # todo: find charismatic eddy- use as example;
                 # find minima index for ow variable
-                uv_centre_y, uv_centre_x = find_uv_centre(ow_i, ssh, slice_yi, slice_xi, subgrid_size, c_method="other")
+                uv_centre_y, uv_centre_x = EddyMethods.find_uv_centre(ow_i, ssh, slice_yi, slice_xi, subgrid_size, c_method="other")
                 #uv_centre_y, uv_centre_x = find_uv_centre(ow_i, ow, slice_yi, slice_xi, subgrid_size)
                 #uv_centre_y, uv_centre_x = find_uv_centre(ow_i, mag_uv, slice_yi, slice_xi, subgrid_size)
 
                 # now screen this centre:ow
-                [isEddy, eddy_border] = screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh)
+                [isEddy, eddy_border] = EddyMethods.screen_centre(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh)
                 if isEddy:
                     # expand borders of screened eddies
-                    eddy_boundary = expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, eddy_border)
+                    eddy_boundary = EddyMethods.expand_borders(uv_centre_y, uv_centre_x, mag_uv, u_geo, v_geo, ssh, eddy_border)
                     eddy_centres.append([uv_centre_y, uv_centre_x])
                     eddy_borders.append(eddy_boundary)
 
@@ -375,7 +396,7 @@ class EddyMethods:
         ow_centre_x += slice_xi.start
 
         # create a subgrid for selection of velocity minimum
-        [y_slice, x_slice] = slice_subgrid(mag_uv, ow_centre_x, ow_centre_y, subgrid_size)
+        [y_slice, x_slice] = EddyMethods.slice_subgrid(mag_uv, ow_centre_x, ow_centre_y, subgrid_size)
 
         # search for a local minimum velocity
         uv_slice = mag_uv[y_slice, x_slice]
@@ -414,7 +435,7 @@ class EddyMethods:
         # Chelton et al. 2007
         if method == 'Chelton':
             ow_mask = (ow <= -2e-12)
-        # Isern-Fontanet et al. 203 filter:
+        # Isern-Fontanet et al. 2003 filter:
         elif method == 'Isern':
             threshold_u = -0.2 * np.nanstd(ow[ow < 0])
             ow_mask = (ow <= threshold_u)
@@ -502,6 +523,306 @@ class EddyMethods:
         return
 
     @staticmethod
+    def plot_local_ow(ow, center_y, center_x, radius=3, m_points=32, ssh=None, u_geo=None, v_geo=None):
+        """
+        Plot the Okubo-Weiss parameter in a region around a specified center point with SSH contours and velocity vectors.
+        
+        :param ow: 2D Okubo-Weiss parameter field
+        :param center_y: Y-coordinate of center point
+        :param center_x: X-coordinate of center point
+        :param radius: Radius of region to plot around center (default: 3)
+        :param m_points: Number of points to use for the contour (default: 32)
+        :param ssh: Sea surface height field (optional)
+        :param u_geo: U component of geostrophic velocity (optional)
+        :param v_geo: V component of geostrophic velocity (optional)
+        """
+        # Define the region to plot
+        y_min = max(0, int(center_y - radius))
+        y_max = min(ow.shape[0], int(center_y + radius + 1))
+        x_min = max(0, int(center_x - radius))
+        x_max = min(ow.shape[1], int(center_x + radius + 1))
+        
+        # Extract the local region
+        local_ow = ow[y_min:y_max, x_min:x_max]
+        
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(8, 6))
+        
+        # Plot OW parameter
+        plt.imshow(local_ow, cmap='Reds_r', origin='lower')
+        plt.colorbar(label='Okubo-Weiss Parameter')
+        
+        # Add SSH contours if available
+        if ssh is not None:
+            local_ssh = ssh[y_min:y_max, x_min:x_max]
+            x_grid = np.arange(x_min, x_max)
+            y_grid = np.arange(y_min, y_max)
+            plt.contour(x_grid - x_min, y_grid - y_min, local_ssh, 
+                       levels=20, colors='grey', alpha=0.5, linewidths=0.5)
+        
+        # Add velocity vectors if available
+        if u_geo is not None and v_geo is not None:
+            local_u = u_geo[y_min:y_max, x_min:x_max]
+            local_v = v_geo[y_min:y_max, x_min:x_max]
+            
+            # Create a grid for quiver plot (subsample for clarity)
+            step = 2
+            y_indices, x_indices = np.mgrid[0:local_u.shape[0]:step, 0:local_u.shape[1]:step]
+            
+            plt.quiver(x_indices, y_indices, 
+                      local_u[::step, ::step], local_v[::step, ::step],
+                      color='k', scale=20, alpha=0.3)
+        
+         # Proceed with full analysis
+        # (rest of the method remains unchanged)
+        theta = np.linspace(0, 2*np.pi, m_points)
+        cos_theta = np.cos(theta)
+        sin_theta = np.sin(theta)
+        
+        circle_x = center_x - x_min + radius * cos_theta
+        circle_y = center_y - y_min + radius * sin_theta
+        
+        points = np.column_stack((circle_y, circle_x))
+        valid_points = (points[:, 0] >= 0) & (points[:, 0] < local_ow.shape[0]) & \
+                      (points[:, 1] >= 0) & (points[:, 1] < local_ow.shape[1])
+        points = points[valid_points]
+        
+        # Get OW values at the points directly
+        ow_vals = local_ow[points[:, 0].astype(int), points[:, 1].astype(int)]
+        valid_mask = ~np.isnan(ow_vals)
+        
+        # Get OW values at circle points
+        contour_points = []
+        for x, y in zip(circle_x, circle_y):
+            if 0 <= x < local_ow.shape[1] and 0 <= y < local_ow.shape[0]:
+                ow_val = ow_vals
+                # Scale the radius based on OW value
+                scale = np.clip(1.0 - ow_val/np.max(np.abs(local_ow)), 0.5, 1.5)
+                contour_points.append((x + (radius * (scale-1) * np.cos(theta[len(contour_points)])),
+                                    y + (radius * (scale-1) * np.sin(theta[len(contour_points)]))))
+        
+        if contour_points:
+            contour_x, contour_y = zip(*contour_points)
+            # Close the contour
+            contour_x = list(contour_x) + [contour_x[0]]
+            contour_y = list(contour_y) + [contour_y[0]]
+            plt.plot(contour_x, contour_y, 'b-', label='OW Contour')
+        
+        # Mark the center point
+        plt.plot(center_x - x_min, center_y - y_min, 'k+', markersize=10, label='Center')
+        
+        plt.title(f'Local Okubo-Weiss Parameter (r={radius})')
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        plt.legend()
+        plt.show()
+        return
+
+    @staticmethod
+    def detect_and_mask_eddy(ow, center_y, center_x, mag_uv, u_geo, v_geo, ssh, radius, m_points=32):
+        """
+        Detect and mask an eddy in the Okubo-Weiss field.
+        
+        :param ow: 2D Okubo-Weiss parameter field
+        :param center_y: Y-coordinate of center point
+        :param center_x: X-coordinate of center point
+        :param mag_uv: Magnitude of geostrophic velocity
+        :param u_geo: U component of geostrophic velocity
+        :param v_geo: V component of geostrophic velocity
+        :param ssh: Sea surface height field
+        :param radius: Radius of eddy to detect
+        :param m_points: Number of points to use for contour analysis
+        :return: True if eddy is detected, False otherwise
+        """ 
+        
+        logging.info(f"Starting detection for center: ({center_y}, {center_x})")
+        # Quick early checks
+        if np.isnan(ow[center_y, center_x]):
+            logging.warning(f"Center point is NaN: ({center_y}, {center_x})")
+            return False, None, ow
+            
+        # Get local region for analysis
+        y_min = max(0, int(center_y - radius))
+        y_max = min(ow.shape[0], int(center_y + radius + 1))
+        x_min = max(0, int(center_x - radius))
+        x_max = min(ow.shape[1], int(center_x + radius + 1))
+        local_ow = ow[y_min:y_max, x_min:x_max]
+        #EddyMethods.plot_local_ow(ow, center_y, center_x, radius=radius, m_points=m_points, 
+        #                          ssh=ssh, u_geo=u_geo, v_geo=v_geo)   
+        logging.info(f"Local OW shape: {local_ow.shape}")
+        
+        # Check valid points in local region
+        valid_ratio = np.sum(~np.isnan(local_ow)) / local_ow.size
+        if valid_ratio < 0.8:
+            logging.warning(f"Not enough valid points in local region: {valid_ratio}")
+            return False, None, ow
+            
+        # Proceed with full analysis
+        # (rest of the method remains unchanged)
+        theta = np.linspace(0, 2*np.pi, m_points)
+        cos_theta = np.cos(theta)
+        sin_theta = np.sin(theta)
+        
+        circle_x = center_x - x_min + radius * cos_theta
+        circle_y = center_y - y_min + radius * sin_theta
+        
+        points = np.column_stack((circle_y, circle_x))
+        valid_points = (points[:, 0] >= 0) & (points[:, 0] < local_ow.shape[0]) & \
+                      (points[:, 1] >= 0) & (points[:, 1] < local_ow.shape[1])
+        points = points[valid_points]
+        
+        if len(points) < m_points * 0.7:
+            logging.warning(f"Not enough valid points for full analysis: {len(points)}")
+            return False, None, ow
+            
+        # Get OW values at the points directly
+        ow_vals = local_ow[points[:, 0].astype(int), points[:, 1].astype(int)]
+        valid_mask = ~np.isnan(ow_vals)
+        
+        if np.sum(valid_mask) < m_points * 0.7:
+            logging.warning(f"Not enough valid OW values: {np.sum(valid_mask)}")
+            return False, None, ow
+            
+        # Scale the radius based on OW value
+        # 0.5 is minimum scale and 1.5 is maximum scale
+        # This is done to avoid very small/large radii
+        scale = np.clip(1.0 - ow_vals/np.max(np.abs(local_ow)), 0.5, 1.5)
+        
+        # Project the scaled points onto the global coordinate system
+        global_x = x_min + points[valid_mask, 1] + (radius * (scale[valid_mask]-1) * cos_theta[valid_points][valid_mask])
+        global_y = y_min + points[valid_mask, 0] + (radius * (scale[valid_mask]-1) * sin_theta[valid_points][valid_mask])
+        
+        # Prepare the contour points for masking
+        contour_points = np.column_stack((global_y, global_x))
+        if len(contour_points) < 3:
+            logging.warning(f"Not enough contour points: {len(contour_points)}")
+            return False, None, ow
+        
+        # Create smaller mask first as quick check
+        small_box_size = 5
+        y_min_test = max(0, int(center_y - small_box_size))
+        y_max_test = min(ow.shape[0], int(center_y + small_box_size + 1))
+        x_min_test = max(0, int(center_x - small_box_size))
+        x_max_test = min(ow.shape[1], int(center_x + small_box_size + 1))
+        
+        y_coords_test, x_coords_test = np.mgrid[y_min_test:y_max_test, x_min_test:x_max_test]
+        points_test = np.column_stack((y_coords_test.ravel(), x_coords_test.ravel()))
+
+        # Quick test on small region
+        local_mask_test = EddyMethods.is_point_inside(contour_points, points_test)
+        if not np.any(local_mask_test):
+            logging.warning(f"No points in mask for small region")
+            return False, None, ow
+
+        # Check SSH values at the contour points
+        ssh_values = ssh[points_test[:, 0].astype(int), points_test[:, 1].astype(int)]
+        center_ssh_value = np.nanmean(ssh_values)
+        valid_ssh_mask = (ssh_values >= center_ssh_value - 0.5) & (ssh_values <= center_ssh_value + 0.5)
+        
+        if np.sum(valid_ssh_mask) < len(valid_ssh_mask) * 0.9:
+            logging.warning(f"Not enough valid SSH values at contour points: {np.sum(valid_ssh_mask)}")
+            return False, None, ow
+            
+        # If we passed all quick checks, do full mask
+        y_min_cont = max(0, int(np.floor(np.min(contour_points[:, 0]))))
+        y_max_cont = min(ow.shape[0], int(np.ceil(np.max(contour_points[:, 0]))) + 1)
+        x_min_cont = max(0, int(np.floor(np.min(contour_points[:, 1]))))
+        x_max_cont = min(ow.shape[1], int(np.ceil(np.max(contour_points[:, 1]))) + 1)
+        
+        y_coords, x_coords = np.mgrid[y_min_cont:y_max_cont, x_min_cont:x_max_cont]
+        points = np.column_stack((y_coords.ravel(), x_coords.ravel()))
+        
+        local_mask = EddyMethods.is_point_inside(contour_points, points)
+        
+        mask = np.zeros_like(ow, dtype=bool)
+        mask[y_min_cont:y_max_cont, x_min_cont:x_max_cont] = local_mask.reshape(y_max_cont-y_min_cont, x_max_cont-x_min_cont)
+        
+        # Get the grid coordinates of points inside the eddy
+        y_coords, x_coords = np.where(mask)
+        eddy_points = np.column_stack((y_coords, x_coords))
+        
+        masked_ow = ow.copy()
+        masked_ow[mask] = np.nan
+        
+        eddy_info = {
+            'center': np.array([center_y, center_x]),
+            'border': contour_points,
+            'points': eddy_points  # Array of (y,x) coordinates of points inside eddy
+        }
+        
+        return True, eddy_info, masked_ow
+
+    @staticmethod
+    def plot_eddy_info(ssh, mag_uv, eddy_info, lat=None, lon=None):
+        """
+        Plot eddy information (center and boundary) on the full grid with SSH contours and velocity magnitude.
+
+        :param ssh: Sea surface height field
+        :param mag_uv: Magnitude of geostrophic velocity
+        :param eddy_info: Dictionary containing eddy information (center, border, mask)
+        :param lat: Optional latitude values for axis labels
+        :param lon: Optional longitude values for axis labels
+        """
+        plt.figure(figsize=(10, 8))
+        
+        # Plot SSH contours
+        if lat is not None and lon is not None:
+            plt.contour(lon, lat, ssh, levels=60, colors='gray', alpha=0.5)
+            x_coords = lon
+            y_coords = lat
+        else:
+            plt.contour(ssh, levels=60, colors='gray', alpha=0.5)
+            x_coords = np.arange(ssh.shape[1])
+            y_coords = np.arange(ssh.shape[0])
+        
+        # Plot velocity magnitude
+        plt.contourf(x_coords, y_coords, mag_uv, levels=30, cmap='hot')
+        plt.colorbar(label='Geostrophic Velocity')
+        
+        if eddy_info is not None:
+            # Plot eddy center
+            center = eddy_info['center']
+            if lat is not None and lon is not None:
+                center_y = np.interp(center[0], np.arange(len(lat)), lat)
+                center_x = np.interp(center[1], np.arange(len(lon)), lon)
+            else:
+                center_y, center_x = center
+            plt.plot(center_x, center_y, 'w*', markersize=10, label='Eddy Center')
+            
+            # Plot eddy boundary
+            border = eddy_info['border']
+            if lat is not None and lon is not None:
+                border_y = np.interp(border[:, 0], np.arange(len(lat)), lat)
+                border_x = np.interp(border[:, 1], np.arange(len(lon)), lon)
+            else:
+                border_y, border_x = border[:, 0], border[:, 1]
+            plt.plot(border_x, border_y, 'w-', linewidth=2, label='Eddy Boundary')
+        
+        plt.title('Eddy Detection Results')
+        if lat is not None and lon is not None:
+            plt.xlabel('Longitude')
+            plt.ylabel('Latitude')
+        else:
+            plt.xlabel('Grid Points (X)')
+            plt.ylabel('Grid Points (Y)')
+        
+        plt.legend()
+        plt.show()
+        return
+
+    @staticmethod
+    def is_point_inside(contour, points):
+        """
+        Check if points are inside a contour.
+
+        :param contour: Contour points (n, 2)
+        :param points: Points to check (m, 2)
+        :return: Boolean array (m,) indicating if each point is inside the contour
+        """
+        contour_path = Path(contour)
+        return contour_path.contains_points(points)
+
+    @staticmethod
     def interpolate_grid(subset_df: Dict[str, xr.DataArray],
                         new_shape: Tuple[int, int]):
         """
@@ -546,34 +867,3 @@ class EddyMethods:
         new_df['latitude'] = lat2
 
         return new_df
-
-    @staticmethod
-    def check_central_velocity(center_y, center_x, mag_uv, central_radius, outer_radius):
-        """Check for low velocity in the center and increasing velocity outward."""
-        # Define central and outer neighborhoods
-        central_y_min = max(0, center_y - central_radius)
-        central_y_max = min(mag_uv.shape[0], center_y + central_radius + 1)
-        central_x_min = max(0, center_x - central_radius)
-        central_x_max = min(mag_uv.shape[1], center_x + central_radius + 1)
-
-        outer_y_min = max(0, center_y - outer_radius)
-        outer_y_max = min(mag_uv.shape[0], center_y + outer_radius + 1)
-        outer_x_min = max(0, center_x - outer_radius)
-        outer_x_max = min(mag_uv.shape[1], center_x + outer_radius + 1)
-
-        # Extract velocity values
-        central_velocity = mag_uv[central_y_min:central_y_max, central_x_min:central_x_max]
-        outer_velocity = mag_uv[outer_y_min:outer_y_max, outer_x_min:outer_x_max]
-
-        # Check if central velocity is lower than a threshold
-        central_avg_velocity = np.mean(central_velocity)
-        if central_avg_velocity > some_threshold:  # Define your threshold for low velocity
-            return False
-
-        # Check if velocity increases outward
-        outer_avg_velocity = np.mean(outer_velocity)
-        if outer_avg_velocity <= central_avg_velocity:  # Ensure outer is greater than central
-            return False
-
-        return True
-

@@ -91,7 +91,7 @@ class Reader:
         lon_range: tuple[float, float],
         lat_range: tuple[float, float],
         time_index: int = 0,
-        variables: list[str] = None) -> Dict[str, xr.DataArray]:
+        variables: list[str] | None = None) -> Dict[str, xr.DataArray]:
         """
         Subset variables from a NetCDF file using xarray within specified geographical bounds.
 
