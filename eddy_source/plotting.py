@@ -59,9 +59,12 @@ class Plotting:
             #plt.plot(border[:, 1], border[:, 0], 'w-', linewidth=2)  # Eddy boundary (lon, lat)
 
             # Interpolate x and y coordinates to lon/lat independently
+            center_x = np.interp(center[1], x_grid, lon)
+            center_y = np.interp(center[0], y_grid, lat)
             border_x = np.interp(border[:, 1], x_grid, lon)
             border_y = np.interp(border[:, 0], y_grid, lat)
             plt.plot(border_x, border_y, c='w')
+            plt.plot(center_x, center_y, 'wx', markersize=8)
         
         plt.title('Eddy Detection Results')
         plt.xlabel('Longitude')

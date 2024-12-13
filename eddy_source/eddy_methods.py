@@ -36,7 +36,7 @@ class EddyMethods:
         current_ow = ow.copy()
         counter = -1
         
-        while len(detected_eddies) < max_eddies and counter < 100:
+        while len(detected_eddies) < max_eddies and counter < 1000:
             counter += 1
             # Find the current global minimum
             if np.all(np.isnan(current_ow)):
@@ -45,6 +45,13 @@ class EddyMethods:
             # Get the indices of the minimum value, ignoring NaNs
             flat_idx = np.nanargmin(current_ow)
             y, x = np.unravel_index(flat_idx, current_ow.shape)
+
+            if y > 3 and x > 3 and y < current_ow.shape[0] and x < current_ow.shape[1]:
+                pass
+            else:
+                current_ow[y, x] = np.nan
+                logging.info(f"Screened out center at: ({y}, {x})")
+                continue
             
             # Try to detect an eddy at this minimum
             [isEddy, eddy_info, new_ow] = EddyMethods.detect_and_mask_eddy(
@@ -62,7 +69,7 @@ class EddyMethods:
                 logging.info(f"Detected eddy at: ({y}, {x})")
             else:
                 # Invalid center - just mask this single point
-                current_ow[y-1:y+1, x-1:x+1] = np.nan
+                current_ow[y-2:y+2, x-2:x+2] = np.nan
                 logging.info(f"Screened out center at: ({y}, {x})")
         
         print(f"Found {len(detected_eddies)} eddies")
@@ -543,10 +550,10 @@ class EddyMethods:
         :param v_geo: V component of geostrophic velocity (optional)
         """
         # Define the region to plot
-        y_min = max(0, int(center_y - radius))
-        y_max = min(ow.shape[0], int(center_y + radius + 1))
-        x_min = max(0, int(center_x - radius))
-        x_max = min(ow.shape[1], int(center_x + radius + 1))
+        y_min = max(0, center_y - radius)
+        y_max = min(ow.shape[0], center_y + radius + 1)
+        x_min = max(0, center_x - radius)
+        x_max = min(ow.shape[1], center_x + radius + 1)
         
         # Extract the local region
         local_ow = ow[y_min:y_max, x_min:x_max]
@@ -593,6 +600,9 @@ class EddyMethods:
                       (points[:, 1] >= 0) & (points[:, 1] < local_ow.shape[1])
         points = points[valid_points]
         
+        if len(points) < m_points * 0.7:
+            return
+        
         # Get OW values at the points directly
         ow_vals = local_ow[points[:, 0].astype(int), points[:, 1].astype(int)]
         valid_mask = ~np.isnan(ow_vals)
@@ -610,15 +620,23 @@ class EddyMethods:
         
         # Create mask using contour points
         mask = np.zeros_like(ow, dtype=bool)
-        contour_path = Path(contour_points)
         
         # Create a grid of points to check
         y_indices, x_indices = np.mgrid[:ow.shape[0], :ow.shape[1]]
-        points = np.column_stack((y_indices.ravel(), x_indices.ravel()))
+        points = np.column_stack((x_indices.ravel(), y_indices.ravel()))
         
         # Check which points are inside the contour
-        inside_points = contour_path.contains_points(points)
+        inside_points = Path(contour_points).contains_points(points)
         mask = inside_points.reshape(ow.shape)
+        
+        # Ensure center point and immediate neighborhood is masked
+        y_center, x_center = int(center_y), int(center_x)
+        mask_radius = max(2, radius // 2)  # At least 2 pixels, or half the radius
+        y_min = max(0, y_center - mask_radius)
+        y_max = min(ow.shape[0], y_center + mask_radius + 1)
+        x_min = max(0, x_center - mask_radius)
+        x_max = min(ow.shape[1], x_center + mask_radius + 1)
+        mask[y_min:y_max, x_min:x_max] = True
         
         # Apply the mask
         new_ow = ow.copy()
@@ -627,7 +645,7 @@ class EddyMethods:
         return True, {'center': (center_y, center_x), 'border': contour_points, 'mask': mask}, new_ow
 
     @staticmethod
-    def detect_and_mask_eddy(ow, center_y, center_x, mag_uv, u_geo, v_geo, ssh, radius, m_points=32):
+    def detect_and_mask_eddy(ow, center_y, center_x, mag_uv, u_geo, v_geo, ssh, radius, m_points=12):
         """Detect and mask an eddy at the specified center point.
         
         :param ow: Okubo-Weiss parameter field
@@ -641,98 +659,91 @@ class EddyMethods:
         :param m_points: number of points to use for contour (default: 32)
         :return: (is_eddy, eddy_info, masked_ow)
         """
-        # Get local region
-        y_min = max(0, int(center_y - radius))
-        y_max = min(ow.shape[0], int(center_y + radius + 1))
-        x_min = max(0, int(center_x - radius))
-        x_max = min(ow.shape[1], int(center_x + radius + 1))
-        
+        # Check if center is already masked
+        if np.isnan(ow[int(center_y), int(center_x)]):
+            return False, None, ow
+            
         # Get OW extent in x and y directions
-        y_extent = ow[y_min:y_max, center_x]
-        x_extent = ow[center_y, x_min:x_max]
+        y_extent = ow[:, int(center_x)]
+        x_extent = ow[int(center_y), :]
         
         # Normalize by center value to find extent
-        c_value = ow[center_y, center_x]
+        c_value = ow[int(center_y), int(center_x)]
         x_norm = x_extent/c_value
         y_norm = y_extent/c_value
         
         # Find where values drop below threshold in both directions
-        threshold = 0.01  # Adjust this value as needed
-        mid_x = (x_max - x_min) // 2
-        mid_y = (y_max - y_min) // 2
+        threshold = 0.0001
         
-        # Find actual radius in x and y directions
-        x_radius = radius
-        y_radius = radius
+        # Find boundaries in x and y directions
+        x_b = []
+        y_b = []
         
-        for i in range(1, radius):
-            if np.any(x_norm[mid_x-i:mid_x+i+1] < threshold):
-                x_radius = i - 1
+        # Search in x direction
+        for i in range(1, min(int(center_x), len(x_extent) - int(center_x), radius)):
+            if x_norm[int(center_x)-i] < threshold:
+                x_b.append(center_x-i)
                 break
-        
-        for i in range(1, radius):
-            if np.any(y_norm[mid_y-i:mid_y+i+1] < threshold):
-                y_radius = i - 1
+        for i in range(1, min(int(center_x), len(x_extent) - int(center_x), radius)):
+            if x_norm[int(center_x)+i] < threshold:
+                x_b.append(center_x+i)
                 break
                 
-        # Use the smaller of the two radii
-        effective_radius = min(x_radius, y_radius)
-        if effective_radius < 2:  # Minimum size check
+        # Search in y direction
+        for i in range(1, min(int(center_y), len(y_extent) - int(center_y), radius)):
+            if y_norm[int(center_y)-i] < threshold:
+                y_b.append(center_y-i)
+                break
+        for i in range(1, min(int(center_y), len(y_extent) - int(center_y), radius)):
+            if y_norm[int(center_y)+i] < threshold:
+                y_b.append(center_y+i)
+                break
+                
+        # Check if we found boundaries in both directions
+        if len(x_b) != 2 or len(y_b) != 2:
             return False, None, ow
             
-        # Generate points on the ellipse
+        # Calculate the semi-axes
+        a = (x_b[1] - x_b[0]) / 2
+        b = (y_b[1] - y_b[0]) / 2
+        
+        # Calculate the center of the ellipse
+        x_c = (x_b[1] + x_b[0]) / 2
+        y_c = (y_b[1] + y_b[0]) / 2
+        
+        # Generate points along the ellipse
         theta = np.linspace(0, 2*np.pi, m_points)
-        circle_x = center_x + effective_radius * np.cos(theta)
-        circle_y = center_y + effective_radius * np.sin(theta)
+        contour_x = x_c + a * np.cos(theta)
+        contour_y = y_c + b * np.sin(theta)
         
-        # Stack points and check validity
-        points = np.column_stack((circle_y, circle_x))
-        valid_points = (points[:, 0] >= 0) & (points[:, 0] < ow.shape[0]) & \
-                      (points[:, 1] >= 0) & (points[:, 1] < ow.shape[1])
-        points = points[valid_points]
-        
-        if len(points) < m_points * 0.7:
-            return False, None, ow
-            
-        # Get OW values at these points
-        ow_vals = ow[points[:, 0].astype(int), points[:, 1].astype(int)]
-        valid_mask = ~np.isnan(ow_vals)
-        
-        if np.sum(valid_mask) < m_points * 0.7:
-            return False, None, ow
-            
-        # Scale the radius based on OW values
-        scale = np.clip(1.0 - ow_vals/np.max(np.abs(ow_vals)), 0.5, 1.5)
-        
-        # Create contour points using only the valid points and their corresponding angles
-        theta_valid = theta[valid_points][valid_mask]
-        contour_x = points[valid_mask, 1] + (effective_radius * (scale[valid_mask]-1) * np.cos(theta_valid))
-        contour_y = points[valid_mask, 0] + (effective_radius * (scale[valid_mask]-1) * np.sin(theta_valid))
+        # Stack points
         contour_points = np.column_stack((contour_y, contour_x))
         
-        if len(contour_points) < 3:
-            return False, None, ow
-            
         # Create mask using contour points
         mask = np.zeros_like(ow, dtype=bool)
-        contour_path = Path(contour_points)
         
         # Create a grid of points to check
         y_indices, x_indices = np.mgrid[:ow.shape[0], :ow.shape[1]]
-        points = np.column_stack((x_indices.ravel(), y_indices.ravel()))
+        points = np.column_stack((y_indices.ravel(), x_indices.ravel()))
         
         # Check which points are inside the contour
-        inside_points = contour_path.contains_points(points)
+        inside_points = Path(contour_points).contains_points(points)
         mask = inside_points.reshape(ow.shape)
+        
+        # Ensure center point and immediate neighborhood is masked
+        y_center, x_center = int(center_y), int(center_x)
+        mask_radius = max(2, radius // 2)  # At least 2 pixels, or half the radius
+        y_min = max(0, y_center - mask_radius)
+        y_max = min(ow.shape[0], y_center + mask_radius + 1)
+        x_min = max(0, x_center - mask_radius)
+        x_max = min(ow.shape[1], x_center + mask_radius + 1)
+        mask[y_min:y_max, x_min:x_max] = True
         
         # Apply the mask
         new_ow = ow.copy()
         new_ow[mask] = np.nan
         
-        # Swap x and y for consistency with other functions
-        contour_points = contour_points[:, ::-1]  # Swap columns
-        
-        return True, {'center': (center_y, center_x), 'border': contour_points, 'mask': mask}, new_ow
+        return True, {'center': (y_c, x_c), 'border': contour_points, 'mask': mask}, new_ow
 
     @staticmethod
     def detect_and_mask_eddy_ssh(ow, center_y, center_x, ssh, u_geo, v_geo, radius=15, ssh_threshold=0.1, m_points=32):
@@ -742,8 +753,8 @@ class EddyMethods:
         :param center_y: y-coordinate of center from OW minimum
         :param center_x: x-coordinate of center from OW minimum
         :param ssh: Sea surface height field
-        :param u_geo: zonal velocity field
-        :param v_geo: meridional velocity field
+        :param u_geo: U component of geostrophic velocity
+        :param v_geo: V component of geostrophic velocity
         :param radius: maximum radius to search
         :param ssh_threshold: threshold for SSH similarity
         :param m_points: number of points to use for contour
@@ -797,7 +808,7 @@ class EddyMethods:
         if y_radius is None:
             y_radius = min(radius, (y_max - y_min) // 2) - 1
             
-        if x_radius < 2 or y_radius < 2:
+        if x_radius < 4 or y_radius < 4:
             return False, None, ow
             
         # Generate points along ellipse
@@ -805,7 +816,7 @@ class EddyMethods:
         circle_x = center_x + x_radius * np.cos(theta)
         circle_y = center_y + y_radius * np.sin(theta)
         
-        # Stack points and check validity
+        # Stack points
         points = np.column_stack((circle_y, circle_x))
         valid_points = (points[:, 0] >= 0) & (points[:, 0] < ssh.shape[0]) & \
                       (points[:, 1] >= 0) & (points[:, 1] < ssh.shape[1])
@@ -832,15 +843,23 @@ class EddyMethods:
         
         # Create mask using contour points
         mask = np.zeros_like(ow, dtype=bool)
-        contour_path = Path(contour_points)
         
         # Create a grid of points to check
         y_indices, x_indices = np.mgrid[:ow.shape[0], :ow.shape[1]]
-        points = np.column_stack((y_indices.ravel(), x_indices.ravel()))
+        points = np.column_stack((x_indices.ravel(), y_indices.ravel()))
         
         # Check which points are inside the contour
-        inside_points = contour_path.contains_points(points)
+        inside_points = Path(contour_points).contains_points(points)
         mask = inside_points.reshape(ow.shape)
+        
+        # Ensure center point and immediate neighborhood is masked
+        y_center, x_center = int(center_y), int(center_x)
+        mask_radius = max(2, radius // 2)  # At least 2 pixels, or half the radius
+        y_min = max(0, y_center - mask_radius)
+        y_max = min(ow.shape[0], y_center + mask_radius + 1)
+        x_min = max(0, x_center - mask_radius)
+        x_max = min(ow.shape[1], x_center + mask_radius + 1)
+        mask[y_min:y_max, x_min:x_max] = True
         
         # Apply the mask
         new_ow = ow.copy()
@@ -919,6 +938,19 @@ class EddyMethods:
         return contour_path.contains_points(points)
 
     @staticmethod
+    def check_if_points_in_contour(contour: np.ndarray,
+                                 points: np.ndarray) -> np.ndarray:
+        """
+        Check if points are inside a contour.
+
+        :param contour: array of contour points
+        :param points: array of points to check
+        :return: boolean array indicating which points are inside the contour
+        """
+        contour_path = Path(contour)
+        return contour_path.contains_points(points)
+
+    @staticmethod
     def interpolate_grid(subset_df: Dict[str, xr.DataArray],
                         new_shape: Tuple[int, int]):
         """
@@ -927,7 +959,7 @@ class EddyMethods:
         :param subset_df: dictionary with data subsetted from .nc file
         :param new_shape: tuple specifying the desired shape of the interpolated matrix (new_n, new_m).
         :returns: 2D array of interpolated values.
-                """
+        """
 
         new_df = {}
         exception_var = ['longitude', 'latitude']
