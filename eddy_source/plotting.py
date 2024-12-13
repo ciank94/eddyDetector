@@ -69,3 +69,84 @@ class Plotting:
         plt.savefig(os.path.join(results_dir, 'eddy_detection.png'), dpi=300)
         plt.show()
         return
+
+    @staticmethod
+    def plot_zoomed_eddy(ssh, u_geo, v_geo, eddy_info, lat, lon, zoom_radius=10):
+        """Plot a zoomed view of a single eddy with SSH contours, velocity quiver plots, and eddy border.
+
+        :param ssh: Sea surface height data
+        :type ssh: numpy.ndarray
+        :param u_geo: Zonal geostrophic velocity
+        :type u_geo: numpy.ndarray
+        :param v_geo: Meridional geostrophic velocity
+        :type v_geo: numpy.ndarray
+        :param eddy_info: Dictionary containing eddy information (center, border)
+        :type eddy_info: dict
+        :param lat: Latitude values
+        :type lat: numpy.ndarray
+        :param lon: Longitude values
+        :type lon: numpy.ndarray
+        :param zoom_radius: Radius of the zoomed region in grid points
+        :type zoom_radius: int
+        """
+        # Get eddy center in grid coordinates
+        center_y, center_x = eddy_info['center']
+        
+        # Define the zoomed region
+        y_min = max(0, int(center_y - zoom_radius))
+        y_max = min(ssh.shape[0], int(center_y + zoom_radius))
+        x_min = max(0, int(center_x - zoom_radius))
+        x_max = min(ssh.shape[1], int(center_x + zoom_radius))
+        
+        # Create the grid for quiver plot (subsample for clarity)
+        subsample = 2  # Show every nth point
+        y_grid, x_grid = np.mgrid[y_min:y_max:subsample, x_min:x_max:subsample]
+        
+        # Get the corresponding lat/lon values
+        lon_zoom = lon[x_min:x_max]
+        lat_zoom = lat[y_min:y_max]
+        
+        # Create a new figure
+        plt.figure(figsize=(10, 8))
+        
+        # Plot SSH contours in the zoomed region
+        plt.contour(lon_zoom, lat_zoom, 
+                   ssh[y_min:y_max, x_min:x_max],
+                   levels=20, colors='gray', alpha=0.5)
+        
+        # Plot velocity quivers
+        u_zoom = u_geo[y_min:y_max:subsample, x_min:x_max:subsample]
+        v_zoom = v_geo[y_min:y_max:subsample, x_min:x_max:subsample]
+        lon_quiver = lon[x_min:x_max:subsample]
+        lat_quiver = lat[y_min:y_max:subsample]
+        
+        plt.quiver(lon_quiver, lat_quiver, u_zoom, v_zoom,
+                  alpha=0.5, scale=5, width=0.003)
+        
+        # Plot eddy border
+        border = eddy_info['border']
+        x_grid_full = np.arange(ssh.shape[1])
+        y_grid_full = np.arange(ssh.shape[0])
+        border_x = np.interp(border[:, 1], x_grid_full, lon)
+        border_y = np.interp(border[:, 0], y_grid_full, lat)
+        plt.plot(border_x, border_y, 'r-', linewidth=2, label='Eddy Border')
+        
+        # Plot eddy center
+        center_lon = np.interp(center_x, x_grid_full, lon)
+        center_lat = np.interp(center_y, y_grid_full, lat)
+        plt.plot(center_lon, center_lat, 'rx', markersize=10, label='Eddy Center')
+        
+        # Set plot limits to the zoomed region
+        plt.xlim(lon_zoom[0], lon_zoom[-1])
+        plt.ylim(lat_zoom[0], lat_zoom[-1])
+        
+        plt.title('Zoomed Eddy View')
+        plt.xlabel('Longitude')
+        plt.ylabel('Latitude')
+        plt.legend()
+        
+        # Save the plot
+        results_dir = os.path.join(os.path.dirname(__file__), '..', 'results')
+        os.makedirs(results_dir, exist_ok=True)
+        plt.savefig(os.path.join(results_dir, 'zoomed_eddy.png'), dpi=300)
+        plt.show()

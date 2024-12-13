@@ -31,7 +31,7 @@ source .venv/bin/activate
 ### 4. Install dependencies
 
 ```bash
-python -m pip install cdsapi numpy xarray scipy matplotlib netcdf4 plotly
+python -m pip install cdsapi numpy xarray scipy matplotlib netcdf4
 ```
 
 ## Project Structure
