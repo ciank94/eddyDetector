@@ -35,6 +35,8 @@ python -m pip install cdsapi numpy xarray scipy matplotlib netcdf4
 ```
 ## Directory Structure
 
+Important folders and files in the project:
+
 ```bash
 findEddy/
 ├── eddyDetector/
@@ -47,6 +49,8 @@ findEddy/
 ├── input_files/
 ├── output_files/
 ├── tests/
+├── usage/
+│   └── detect.py
 ├── LICENSE
 ├── pyproject.toml
 └── README.md
@@ -77,19 +81,34 @@ findEddy/
 - Storage for generated plots and analysis results
 - Eddy detection visualizations
 
-## Usage
+## Usage (see for example `usage/detect.py`)
 
 ```python
-from src import (
-   EddyMethods,
-   Reader,
-   Plotting,
-   __version__
-)
+# ===========Section 0: imports=============
+import numpy as np
+import matplotlib.pyplot as plt
+from eddyDetector import *
 
-# Download and process data
-year, month, day = Reader.download_lists(y_start=2017, y_end=2017, m_start=1, m_end=1)
-Reader.download_cds_data(year=year, month=month, day=day)
+# ==========Section 1: Parameters============= (stuff I will change a lot, others in a ./input_files/yaml file)
+datetime_start = "2017-01-01"
+datetime_end = "2017-02-01"
+input_filepath = './input_files'
+output_filepath = './output_files'
+lat_bounds = (-73, -50)
+lon_bounds = (-70, -31)
+time_index = 0 # index for time dimension (test)
+scale_factor_interpolation = 5
+
+# ==========Section 2: Prepare data=============
+fileExp = FileExplorerSLD(datetime_start, datetime_end) # initiate file explorer for sea-level data (SLD) input files
+fileExp.download_check(input_filepath) # check if files are already downloaded
+reader = ReaderSLD(fileExp, time_index) # initiate reader for sea-level data (SLD) input files at time index
+ncfile_subset = reader.subset_netcdf(lon_bounds, lat_bounds) # subset data
+interpolator = InterpolateSLD(ncfile_subset) # initiate interpolator with latitude and longitude meshgrid
+data = interpolator.interpolate_grid(scale_factor_interpolation) # interpolate data
+
+# ==========Section 3: Detect eddies=============
+todo
 
 # Detect and visualize eddies
 # See test.py for complete workflow example
