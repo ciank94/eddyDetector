@@ -8,9 +8,23 @@ import os
 import datetime
 import logging
 
+# Configure logging format to include the class name
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(name)s - %(levelname)s - %(message)s'
+)
 
-class SeaLevelDataReader:
+class FileExplorerSLD:
     def __init__(self, datetime_start, datetime_end):
+        """Initialize the FileExplorerSLD class.
+
+        :param datetime_start: Start date in the format 'YYYY-MM-DD'
+        :type datetime_start: str
+        :param datetime_end: End date in the format 'YYYY-MM-DD'
+        :type datetime_end: str
+        """
+        self.file_prefix = "dt_global_twosat_phy_l4"
+        self.file_suffix = "vDT2024.nc"
         start_date = datetime.datetime.strptime(datetime_start, "%Y-%m-%d")
         end_date = datetime.datetime.strptime(datetime_end, "%Y-%m-%d")
         
@@ -21,106 +35,73 @@ class SeaLevelDataReader:
             self.datetime.append(current_datetime)
             current_datetime += datetime.timedelta(days=1)
         self.n_dates = len(self.datetime)
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
-        self.logger.info(f"Start date: {start_date}")
-        self.logger.info(f"End date: {end_date}")
-        self.logger.info(f"Number of dates: {self.n_dates}")
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.info(f"Initializing FileExplorerSLD with start date: {datetime_start} and end date: {datetime_end}"
+                         f"and number of dates: {self.n_dates}")
+        self.logger.info(f"Files with prefix: {self.file_prefix} and suffix: {self.file_suffix}")
         return
 
-    def check_files_exist(self, filepath):
-        # Check if the file exists
-        file_prefix = "dt_global_twosat_phy_l4"
-        file_suffix = "vDT2024.nc"
+    def download_check(self, filepath):
+        """check if files are already downloaded
+
+        :param filepath: input files directory
+        """
         self.download_list = []
         for date in self.datetime:
             date_str = date.strftime('%Y%m%d')
-            file_path = os.path.join(filepath, f"{file_prefix}_{date_str}_{file_suffix}")
+            file_path = os.path.join(filepath, f"{self.file_prefix}_{date_str}_{self.file_suffix}")
             if not os.path.exists(file_path):
                 self.logger.info(f"File not found: {file_path}, adding to download list")
                 self.download_list.append(date)
             else:
                 self.logger.info(f"File found: {file_path}")
 
-    @staticmethod
-    def download_sea_level_netcdf(filepath, datetime_start, datetime_end):
-        """
-        Download NetCDF data from a Climate Data Store.
-
-        :param datetime_start: Start date in the format "YYYY-MM-DD"
-        :param datetime_end: End date in the format "YYYY-MM-DD"
-        :param filepath: The file path to save the downloaded data.
-        :return: None
-        """
-
-        start_date = datetime.datetime.strptime(datetime_start, "%Y-%m-%d")
-        end_date = datetime.datetime.strptime(datetime_end, "%Y-%m-%d")
-
-        # Create simple lists for API
-        year = [str(start_date.year)]  # Just need the start year since it's the same
-        
-        
-        # Get list of months
-        month = []
-        for m in range(start_date.month, end_date.month + 1):
-            month.append(f"{m:02d}")  # Zero-pad to ensure '01' format
-            
-        # Always use full month of days since API will filter
-        day = [f"{d:02d}" for d in range(0, 32)]
-
-        logging.info(f"Downloading data for year (s): {year}, month (s): {month}, day (s): {day}")        
-        
-        # Download data using API   
-        Reader.download_cds_data(filepath, year, month, day)
-        
-        return 
-
-    @staticmethod
-    def download_cds_data(filepath:str, year: Union[str, List[str]],
-                      month: Union[str, List[str]],
-                      day: Union[str, List[str]],
-                      version: str = "vdt2024"):
-        """
-        function to download data from the climate data store
-
-        :param filepath: The file path to save the downloaded data.
-        :param year: list of years
-        :param month: list of months
-        :param day: list of days
-        :param version: sea level data version
-        :return:
-        """
-
-        dataset = "satellite-sea-level-global"
-        zip_file = "sea_level_data.zip"
-        request = {
-            "variable": ["daily"],
-            "year": year,
-            "month": month,
-            "day": day,
-            "version": version
-        }
-        client = cdsapi.Client()
-        client.retrieve(dataset, request, zip_file)
-        logging.info(f"Data saved to: {zip_file}")
-
-        # Extract the ZIP file
-        extracted_files = []
-        with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-            # Extract all files to a specific directory (optional)
-            zip_ref.extractall(filepath)
-            extracted_files = zip_ref.namelist()  # List the files in the ZIP
-
-        # Print the list of extracted files
-        for file in extracted_files:
-            logging.info(f"Extracted file: {file} from {zip_file}")
-
-        # Delete the zip file
-        logging.info(f"Deleting zip file: {zip_file}")
-        os.remove(zip_file)
+        self.logger.info(f"Number of files to download: {len(self.download_list)}") 
+        if len(self.download_list) == 0:
+            self.logger.info("No files to download, exiting")
+            return
+        self.download_files(filepath)
         return
 
+    def download_files(self, filepath):
+        """download files from cds api
 
+        :param filepath: input files directory
+        :return: 
+        """
+        for date in self.download_list:
+            dataset = "satellite-sea-level-global"
+            zip_file = "sea_level_data.zip"
+            request = {
+                "variable": ["daily"],
+                "year": f"{date.year}",
+                "month": f"{date.month:02d}",
+                "day": f"{date.day:02d}",
+                "version": "vdt2024"
+            }
+            client = cdsapi.Client()
+            client.retrieve(dataset, request, zip_file)
+
+            # Extract the ZIP file
+            extracted_files = []
+            with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                # Extract all files to a specific directory (optional)
+                zip_ref.extractall(filepath)
+                extracted_files = zip_ref.namelist()  # List the files in the ZIP
+
+            # Print the list of extracted files
+            for file in extracted_files:
+                self.logger.info(f"Extracted file: {file} from {zip_file} to {filepath}")
+
+            # Delete the zip file
+            self.logger.info(f"Deleting zip file: {zip_file}")
+            os.remove(zip_file)
+        self.logger.info(f"Finished downloading {len(self.download_list)} files")
+        return
+
+class ReaderSLD:
+    def __init__(self):
+        pass
 
     @staticmethod
     def subset_netcdf(
