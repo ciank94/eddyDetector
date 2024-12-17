@@ -1,3 +1,4 @@
+import datetime
 import sys
 import os
 import numpy as np
@@ -6,14 +7,22 @@ import matplotlib.pyplot as plt
 #sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from eddy_source import (
     EddyMethods,
-    Reader,
+    SeaLevelDataReader,
     Plotting,
     __version__
 )
 
+datetime_start = "2017-01-01"
+datetime_end = "2017-02-01"
+filepath='./input_files'
 
-# Print package version
-print(f"Package version: {__version__}")
+# ==========Section 1: reader=============
+reader = SeaLevelDataReader(datetime_start, datetime_end)
+reader.check_files_exist(filepath)
+reader.download_files()
+breakpoint()
+Reader.load_netcdf(filepath, datetime_start, datetime_end)
+
 
 #==========Section 1: reader=============
 download_f = False

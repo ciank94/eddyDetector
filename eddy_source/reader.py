@@ -1,76 +1,98 @@
+from turtle import st
 import xarray as xr
 import numpy as np
 from typing import Dict, Union, List
 import cdsapi
 import zipfile
 import os
+import datetime
+import logging
 
-class Reader:
-    def __init__(self):
-        pass
 
-    @staticmethod
-    def download_lists(y_start: int,
-                   y_end: int,
-                   m_start: int,
-                   m_end: int,
-                   d_start: int,
-                   d_end: int):
-        """
-        initiate and store time indices for downloading cds data
-
-        :param y_start:
-        :param y_end:
-        :param m_start:
-        :param m_end:
-        :param d_start:
-        :param d_end:
-        :return:
-        """
-
-        year = []
-        month = []
-        day = []
-        [year.append(f"{i:02d}") for i in range(y_start, y_end + 1)]  # ensures two-digit string, leading zeros if needed
-        [month.append(f"{i:02d}") for i in range(m_start, m_end + 1)]  # ensures two-digit string, leading zeros if needed
-        [day.append(f"{i:02d}") for i in range(d_start, d_end + 1)]  # ensures two-digit string, leading zeros if needed
-        return year, month, day
-
-    @staticmethod
-    def unzip_files():
-        """
-        unzip dt_global_twosat_phy_l4 files and remove .zip file
-
-        """
-        # Extract the zip file
-        # Find the zip file in the specified directory
-        zip_files = [f for f in os.listdir("./") if f.endswith('.zip')]
-
-        # Extract the zip file
-        zip_path = os.path.join("./", zip_files[0])
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall("./")
-
-        # Delete the zip file
-        os.remove(zip_path)
+class SeaLevelDataReader:
+    def __init__(self, datetime_start, datetime_end):
+        start_date = datetime.datetime.strptime(datetime_start, "%Y-%m-%d")
+        end_date = datetime.datetime.strptime(datetime_end, "%Y-%m-%d")
+        
+        # Initialize lists for years, months, and days
+        self.datetime = []
+        current_datetime = start_date
+        while current_datetime <= end_date:
+            self.datetime.append(current_datetime)
+            current_datetime += datetime.timedelta(days=1)
+        self.n_dates = len(self.datetime)
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+        self.logger.info(f"Start date: {start_date}")
+        self.logger.info(f"End date: {end_date}")
+        self.logger.info(f"Number of dates: {self.n_dates}")
         return
 
+    def check_files_exist(self, filepath):
+        # Check if the file exists
+        file_prefix = "dt_global_twosat_phy_l4"
+        file_suffix = "vDT2024.nc"
+        self.download_list = []
+        for date in self.datetime:
+            date_str = date.strftime('%Y%m%d')
+            file_path = os.path.join(filepath, f"{file_prefix}_{date_str}_{file_suffix}")
+            if not os.path.exists(file_path):
+                self.logger.info(f"File not found: {file_path}, adding to download list")
+                self.download_list.append(date)
+            else:
+                self.logger.info(f"File found: {file_path}")
+
     @staticmethod
-    def download_cds_data(year: Union[str, List[str]],
+    def download_sea_level_netcdf(filepath, datetime_start, datetime_end):
+        """
+        Download NetCDF data from a Climate Data Store.
+
+        :param datetime_start: Start date in the format "YYYY-MM-DD"
+        :param datetime_end: End date in the format "YYYY-MM-DD"
+        :param filepath: The file path to save the downloaded data.
+        :return: None
+        """
+
+        start_date = datetime.datetime.strptime(datetime_start, "%Y-%m-%d")
+        end_date = datetime.datetime.strptime(datetime_end, "%Y-%m-%d")
+
+        # Create simple lists for API
+        year = [str(start_date.year)]  # Just need the start year since it's the same
+        
+        
+        # Get list of months
+        month = []
+        for m in range(start_date.month, end_date.month + 1):
+            month.append(f"{m:02d}")  # Zero-pad to ensure '01' format
+            
+        # Always use full month of days since API will filter
+        day = [f"{d:02d}" for d in range(0, 32)]
+
+        logging.info(f"Downloading data for year (s): {year}, month (s): {month}, day (s): {day}")        
+        
+        # Download data using API   
+        Reader.download_cds_data(filepath, year, month, day)
+        
+        return 
+
+    @staticmethod
+    def download_cds_data(filepath:str, year: Union[str, List[str]],
                       month: Union[str, List[str]],
                       day: Union[str, List[str]],
                       version: str = "vdt2024"):
         """
         function to download data from the climate data store
 
-        :param year:
-        :param month:
-        :param day:
-        :param version:
+        :param filepath: The file path to save the downloaded data.
+        :param year: list of years
+        :param month: list of months
+        :param day: list of days
+        :param version: sea level data version
         :return:
         """
 
         dataset = "satellite-sea-level-global"
+        zip_file = "sea_level_data.zip"
         request = {
             "variable": ["daily"],
             "year": year,
@@ -79,11 +101,26 @@ class Reader:
             "version": version
         }
         client = cdsapi.Client()
-        client.retrieve(dataset, request).download()
+        client.retrieve(dataset, request, zip_file)
+        logging.info(f"Data saved to: {zip_file}")
 
-        # rename the file:
-        Reader.unzip_files()
+        # Extract the ZIP file
+        extracted_files = []
+        with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+            # Extract all files to a specific directory (optional)
+            zip_ref.extractall(filepath)
+            extracted_files = zip_ref.namelist()  # List the files in the ZIP
+
+        # Print the list of extracted files
+        for file in extracted_files:
+            logging.info(f"Extracted file: {file} from {zip_file}")
+
+        # Delete the zip file
+        logging.info(f"Deleting zip file: {zip_file}")
+        os.remove(zip_file)
         return
+
+
 
     @staticmethod
     def subset_netcdf(

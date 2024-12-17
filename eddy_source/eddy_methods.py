@@ -4,9 +4,7 @@ import xarray as xr
 from typing import Dict, Tuple
 from scipy.ndimage import zoom
 import matplotlib.pyplot as plt
-from scipy.interpolate import RegularGridInterpolator
 from matplotlib.path import Path
-from skimage.draw import polygon
 import logging
 
 # Configure logging
@@ -178,115 +176,6 @@ class EddyMethods:
         vorticity = (dvx - duy)
         ow = (dux - dvy) ** 2 + (dvx + duy) ** 2 - vorticity ** 2  # Sn**2 + Ss**2 + ω**2
         return ow, vorticity
-
-    @staticmethod
-    def plot_local_ow(ow, center_y, center_x, radius=3, m_points=32, ssh=None, u_geo=None, v_geo=None):
-        """
-        Plot the Okubo-Weiss parameter in a region around a specified center point with SSH contours and velocity vectors.
-        
-        :param ow: 2D Okubo-Weiss parameter field
-        :param center_y: Y-coordinate of center point
-        :param center_x: X-coordinate of center point
-        :param radius: Radius of region to plot around center (default: 3)
-        :param m_points: Number of points to use for the contour (default: 32)
-        :param ssh: Sea surface height field (optional)
-        :param u_geo: U component of geostrophic velocity (optional)
-        :param v_geo: V component of geostrophic velocity (optional)
-        """
-        # Define the region to plot
-        y_min = max(0, center_y - radius)
-        y_max = min(ow.shape[0], center_y + radius + 1)
-        x_min = max(0, center_x - radius)
-        x_max = min(ow.shape[1], center_x + radius + 1)
-        
-        # Extract the local region
-        local_ow = ow[y_min:y_max, x_min:x_max]
-        
-        # Create the plot
-        fig, ax = plt.subplots(figsize=(8, 6))
-        
-        # Plot OW parameter
-        plt.imshow(local_ow, cmap='Reds_r', origin='lower')
-        plt.colorbar(label='Okubo-Weiss Parameter')
-        
-        # Add SSH contours if available
-        if ssh is not None:
-            local_ssh = ssh[y_min:y_max, x_min:x_max]
-            x_grid = np.arange(x_min, x_max)
-            y_grid = np.arange(y_min, y_max)
-            plt.contour(x_grid - x_min, y_grid - y_min, local_ssh, 
-                       levels=20, colors='grey', alpha=0.5, linewidths=0.5)
-        
-        # Add velocity vectors if available
-        if u_geo is not None and v_geo is not None:
-            local_u = u_geo[y_min:y_max, x_min:x_max]
-            local_v = v_geo[y_min:y_max, x_min:x_max]
-            
-            # Create a grid for quiver plot (subsample for clarity)
-            step = 2
-            y_indices, x_indices = np.mgrid[0:local_u.shape[0]:step, 0:local_u.shape[1]:step]
-            
-            plt.quiver(x_indices, y_indices, 
-                      local_u[::step, ::step], local_v[::step, ::step],
-                      color='k', scale=20, alpha=0.3)
-        
-         # Proceed with full analysis
-        # (rest of the method remains unchanged)
-        theta = np.linspace(0, 2*np.pi, m_points)
-        cos_theta = np.cos(theta)
-        sin_theta = np.sin(theta)
-        
-        circle_x = center_x - x_min + radius * cos_theta
-        circle_y = center_y - y_min + radius * sin_theta
-        
-        points = np.column_stack((circle_y, circle_x))
-        valid_points = (points[:, 0] >= 0) & (points[:, 0] < local_ow.shape[0]) & \
-                      (points[:, 1] >= 0) & (points[:, 1] < local_ow.shape[1])
-        points = points[valid_points]
-        
-        if len(points) < m_points * 0.7:
-            return
-        
-        # Get OW values at the points directly
-        ow_vals = local_ow[points[:, 0].astype(int), points[:, 1].astype(int)]
-        valid_mask = ~np.isnan(ow_vals)
-        
-        if np.sum(valid_mask) < m_points * 0.7:
-            return
-        
-        # Get OW values at circle points
-        contour_points = []
-        for i in range(len(theta)):
-            x = center_x + radius * np.cos(theta[i])
-            y = center_y + radius * np.sin(theta[i])
-            contour_points.append([y, x])  # Note: y, x order for consistency
-        contour_points = np.array(contour_points)
-        
-        # Create mask using contour points
-        mask = np.zeros_like(ow, dtype=bool)
-        
-        # Create a grid of points to check
-        y_indices, x_indices = np.mgrid[:ow.shape[0], :ow.shape[1]]
-        points = np.column_stack((x_indices.ravel(), y_indices.ravel()))
-        
-        # Check which points are inside the contour
-        inside_points = Path(contour_points).contains_points(points)
-        mask = inside_points.reshape(ow.shape)
-        
-        # Ensure center point and immediate neighborhood is masked
-        y_center, x_center = int(center_y), int(center_x)
-        mask_radius = max(2, radius // 2)  # At least 2 pixels, or half the radius
-        y_min = max(0, y_center - mask_radius)
-        y_max = min(ow.shape[0], y_center + mask_radius + 1)
-        x_min = max(0, x_center - mask_radius)
-        x_max = min(ow.shape[1], x_center + mask_radius + 1)
-        mask[y_min:y_max, x_min:x_max] = True
-        
-        # Apply the mask
-        new_ow = ow.copy()
-        new_ow[mask] = np.nan
-        
-        return True, {'center': (center_y, center_x), 'border': contour_points, 'mask': mask}, new_ow
 
     @staticmethod
     def detect_and_mask_eddy(ow, center_y, center_x, mag_uv, u_geo, v_geo, ssh, radius, m_points):
