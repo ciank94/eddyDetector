@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "findEddy"
+name = "eddyDetector"
 version = "0.1.0"
 description = "A package for detecting eddies from altimetry data"
 readme = "README.md"
@@ -14,13 +14,5 @@ authors = [
 dependencies = []
 
 [tool.setuptools]
-packages = ["eddy_source"]
+packages = ["eddyDetector"]
 
-# [tool.poetry.dependencies]
-# cdsapi = "0.5.0"
-# numpy = "1.26.2"
-# xarray = "2023.12.0"
-# scipy = "1.10.0"
-# matplotlib = "3.8.2"
-# netcdf4 = "1.6.2"
-# plotly = "5.14.1"

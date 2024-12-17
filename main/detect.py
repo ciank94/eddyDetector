@@ -1,29 +1,32 @@
-# findEddy/main/detect.py
+# eddyDetector/main/detect.py
 # ===========Section 0: imports=============
 import numpy as np
 import matplotlib.pyplot as plt
-from eddy_source import (
+from pyproj import proj
+from eddyDetector import (
     EddyMethods,
     FileExplorerSLD,
     ReaderSLD,
+    InterpolateSLD,
     Plotting,
 )
 
-# ==========Section 1: Parameters=============
+# ==========Section 1: Parameters============= (stuff I will change a lot, others in a ./input_files/yaml file)
 datetime_start = "2017-01-01"
 datetime_end = "2017-02-01"
-filepath = './input_files'
+input_filepath = './input_files'
+output_filepath = './output_files'
 lat_bounds = (-73, -50)
 lon_bounds = (-70, -31)
-
-# ==========Section 2: FileExplorer=============
-fileExp = FileExplorerSLD(datetime_start, datetime_end) # initiate file explorer for sea-level data (SLD) input files
-fileExp.download_check(filepath) # check if files are already downloaded
-
-#==========Section 3: Reader=============
 time_index = 0 # index for time dimension (test)
-reader = ReaderSLD(fileExp, time_index)
-df = reader.subset_netcdf(lon_bounds, lat_bounds)
+proj_name = 'merc'
+
+# ==========Section 2: Prepare data=============
+fileExp = FileExplorerSLD(datetime_start, datetime_end) # initiate file explorer for sea-level data (SLD) input files
+fileExp.download_check(input_filepath) # check if files are already downloaded
+reader = ReaderSLD(fileExp, time_index) # initiate reader for sea-level data (SLD) input files at time index
+df = reader.subset_netcdf(lon_bounds, lat_bounds) # subset data
+interpolator =InterpolateSLD(df) # initiate interpolator with latitude and longitude meshgrid
 
 breakpoint()
 

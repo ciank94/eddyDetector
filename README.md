@@ -36,8 +36,8 @@ python -m pip install cdsapi numpy xarray scipy matplotlib netcdf4
 
 ## Project Structure
 
-### Source Code (`src/`)
-- **`__init__.py`**: Package initialization and public API definitions
+### Source Code (`eddyDetector/`)
+- **`__init__.py`**: Module initialization
 - **`reader.py`**: Data acquisition and preprocessing
   - Download functionality for oceanographic data
   - NetCDF file subsetting capabilities
