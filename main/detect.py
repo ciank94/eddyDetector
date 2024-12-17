@@ -13,37 +13,20 @@ from eddy_source import (
 datetime_start = "2017-01-01"
 datetime_end = "2017-02-01"
 filepath = './input_files'
+lat_bounds = (-73, -50)
+lon_bounds = (-70, -31)
 
 # ==========Section 2: FileExplorer=============
 fileExp = FileExplorerSLD(datetime_start, datetime_end) # initiate file explorer for sea-level data (SLD) input files
 fileExp.download_check(filepath) # check if files are already downloaded
 
 #==========Section 3: Reader=============
-time_index = 0
+time_index = 0 # index for time dimension (test)
 reader = ReaderSLD(fileExp, time_index)
+df = reader.subset_netcdf(lon_bounds, lat_bounds)
 
 breakpoint()
 
-
-
-
-Reader.load_netcdf(filepath, datetime_start, datetime_end)
-
-
-
-folder = "./"
-filename = folder + 'dt_global_twosat_phy_l4_20170101_vDT2021.nc'
-
-subset_df = Reader.subset_netcdf(filepath= filename,
-         lon_range = (-70, -31),
-         lat_range = (-73, -50),
-        time_index= 0,
-        variables = ['longitude', 'latitude', 'ugos', 'vgos', 'adt'])
-#subset_df = subset_netcdf(filepath= filename,
-#         lon_range = (3, 30),
-#         lat_range = (50, 80),
-#        time_index= 0,
-#        variables = ['longitude', 'latitude', 'ugos', 'vgos', 'adt'])
 
 #==========Section 2: filter dataset=============
 new_shape = (int(subset_df['ugos'].shape[0]*5), int(subset_df['ugos'].shape[1]*5))
