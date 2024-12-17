@@ -89,6 +89,7 @@ from eddyDetector import *
 ```
 
 then, define parameters for data acquisition, preprocessing, and simulation:
+
 ```python
 # ==========Section 1: Parameters============= (stuff I will change a lot, others in a ./input_files/yaml file)
 datetime_start = "2017-01-01"
@@ -102,6 +103,7 @@ scale_factor_interpolation = 5
 ```
 
 preprocess data:
+
 ```python	
 # ==========Section 2: Prepare data=============
 fileExp = FileExplorerSLD(datetime_start, datetime_end) # initiate file explorer for sea-level data (SLD) input files
