@@ -1,7 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from scipy.interpolate import RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator, interp1d
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 
 class Plotting:
     def __init__(self):
@@ -10,71 +12,72 @@ class Plotting:
 
     @staticmethod
     def plot_eddy_detection(ssh, geos_vel, eddy_borders, lat, lon):
-        """Plot the SSH contours, geostrophic velocity, and eddy borders.
+        """
+        Plot the detected eddies with coastlines and geographic features.
 
         :param ssh: Sea surface height data
-        :type ssh: numpy.ndarray
         :param geos_vel: Geostrophic velocity magnitude
-        :type geos_vel: numpy.ndarray
-        :param eddy_borders: Array containing eddy border coordinates with shape (n_eddies, points, 2)
-        :type eddy_borders: numpy.ndarray
-        :param lat: Latitude values
-        :type lat: numpy.ndarray
-        :param lon: Longitude values
-        :type lon: numpy.ndarray
+        :param eddy_borders: List of detected eddy borders
+        :param lat: Latitude coordinates
+        :param lon: Longitude coordinates
         """
-        plt.rcParams.update({'font.size': 12})
-        
-        # Ensure the results directory exists
-        results_dir = os.path.join(os.path.dirname(__file__), '..', 'results')
+        # Create figure with a specific projection
+        plt.figure(figsize=(15, 10))
+        ax = plt.axes(projection=ccrs.PlateCarree())
 
-        # Create the results directory if it does not already exist.
-        # The exist_ok parameter means that if the directory already exists,
-        # os.makedirs will not raise an OSError. If exist_ok is False (the
-        # default), os.makedirs will raise FileExistsError if the directory
-        # already exists.
-        os.makedirs(results_dir, exist_ok=True)
-        
-        # Create a new figure with a specified size
-        # The size is given in inches. The default is 8 inches by 6 inches.
-        plt.figure(figsize=(10, 8))
-        
-        # Plot SSH contours
-        plt.contour(lon, lat, ssh, levels=60, colors='gray', alpha=0.5)
-        
-        # Plot geostrophic velocity
-        plt.contourf(lon, lat, geos_vel, levels=30, cmap='hot')
-        plt.colorbar(label='Geostrophic Velocity')
-        
-        #Plot eddy borders
-        # Create grid coordinates for interpolation
-        x_grid = np.arange(geos_vel.shape[1])
-        y_grid = np.arange(geos_vel.shape[0])
-        
+        # Add coastlines and other features
+        ax.coastlines(resolution='50m', linewidth=1)
+        ax.add_feature(cfeature.LAND, facecolor='lightgray')
+        ax.add_feature(cfeature.OCEAN, facecolor='lightblue', alpha=0.3)
+        ax.add_feature(cfeature.BORDERS, linestyle=':')
+        ax.gridlines(draw_labels=True)
+
+        # Plot SSH
+        ssh_plot = ax.contour(lon, lat, ssh, 
+                             transform=ccrs.PlateCarree(),
+                             levels=60,
+                             colors='gray',
+                             alpha=0.5)
+
+        # Plot velocity magnitude
+        vel_plot = ax.contourf(lon, lat, geos_vel, 
+                              transform=ccrs.PlateCarree(),
+                              levels=30,
+                              cmap='hot')
+        plt.colorbar(vel_plot, label='Geostrophic Velocity')
+
+        # Plot eddy borders
         for eddy in eddy_borders:
-            # Plot each eddy's center and border
-            center = eddy['center']
-            border = eddy['border']
-            #plt.plot(center[1], center[0], 'wx', markersize=8)  # Eddy center (lon, lat)
-            #plt.plot(border[:, 1], border[:, 0], 'w-', linewidth=2)  # Eddy boundary (lon, lat)
+            if 'border' in eddy:
+                border_points = eddy['border']
+                if len(border_points) > 0:
+                    border_y = border_points[:, 0].astype(int)
+                    border_x = border_points[:, 1].astype(int)
+                    
+                    # Plot the border directly
+                    ax.plot(lon[border_x], lat[border_y], 
+                           c = 'w', 
+                           linewidth=2,
+                           label='Eddy Border')
 
-            # Interpolate x and y coordinates to lon/lat independently
-            center_x = np.interp(center[1], x_grid, lon)
-            center_y = np.interp(center[0], y_grid, lat)
-            border_x = np.interp(border[:, 1], x_grid, lon)
-            border_y = np.interp(border[:, 0], y_grid, lat)
-            plt.plot(border_x, border_y, c='w')
-            plt.plot(center_x, center_y, 'wx', markersize=8)
+        # Set plot extent to data bounds with some padding
+        ax.set_extent([lon.min(), lon.max(), lat.min(), lat.max()], 
+                     crs=ccrs.PlateCarree())
+
+        # Add title and labels
+        plt.title('Eddy Detection with Geographic Features')
         
-        plt.title('Eddy Detection Results')
-        plt.xlabel('Longitude')
-        plt.ylabel('Latitude')
-        plt.savefig(os.path.join(results_dir, 'eddy_detection.png'), dpi=300)
+        # Save the figure
+        results_dir = os.path.join(os.path.dirname(__file__), '..', 'results')
+        os.makedirs(results_dir, exist_ok=True)
+        plt.savefig(os.path.join(results_dir, 'eddy_detection_with_geography.png'), 
+                    dpi=300, 
+                    bbox_inches='tight')
         plt.show()
         return
 
     @staticmethod
-    def plot_zoomed_eddy(ssh, u_geo, v_geo, eddy_info, lat, lon, zoom_radius=10):
+    def plot_zoomed_eddy(ssh, u_geo, v_geo, eddy_info, lat, lon, zoom_radius=20):
         """Plot a zoomed view of a single eddy with SSH contours, velocity quiver plots, and eddy border.
 
         :param ssh: Sea surface height data
@@ -116,6 +119,11 @@ class Plotting:
         plt.contour(lon_zoom, lat_zoom, 
                    ssh[y_min:y_max, x_min:x_max],
                    levels=20, colors='gray', alpha=0.5)
+
+        plt.contourf(lon_zoom, lat_zoom, 
+                    np.sqrt(u_geo[y_min:y_max, x_min:x_max]**2 + v_geo[y_min:y_max, x_min:x_max]**2), 
+                    levels=30, cmap='hot')       
+        plt.colorbar(label='Geostrophic Velocity')
         
         # Plot velocity quivers
         u_zoom = u_geo[y_min:y_max:subsample, x_min:x_max:subsample]
@@ -124,7 +132,7 @@ class Plotting:
         lat_quiver = lat[y_min:y_max:subsample]
         
         plt.quiver(lon_quiver, lat_quiver, u_zoom, v_zoom,
-                  alpha=0.5, scale=5, width=0.003)
+                  alpha=0.5, scale=20, width=0.003)
         
         # Plot eddy border
         border = eddy_info['border']
@@ -153,3 +161,68 @@ class Plotting:
         os.makedirs(results_dir, exist_ok=True)
         plt.savefig(os.path.join(results_dir, 'zoomed_eddy.png'), dpi=300)
         plt.show()
+        return
+
+    @staticmethod
+    def plot_zoomed_eddy_with_contours(ssh, u_geo, v_geo, eddy_info, lat, lon, ow, zoom_radius=20):
+        """
+        Plot the zoomed-in view of an eddy along with the closed contours of the Okubo-Weiss parameter.
+
+        :param ssh: Sea surface height data
+        :param u_geo: U component of geostrophic velocity
+        :param v_geo: V component of geostrophic velocity
+        :param eddy_info: Information about the detected eddy
+        :param lat: Latitude coordinates
+        :param lon: Longitude coordinates
+        :param ow: Okubo-Weiss parameter data
+        :param zoom_radius: Radius for zooming in on the eddy
+        """
+        
+        # Get eddy center in grid coordinates
+        center_y, center_x = eddy_info['center']
+        
+        # Define the zoomed region
+        y_min = max(0, int(center_y - zoom_radius))
+        y_max = min(ssh.shape[0], int(center_y + zoom_radius))
+        x_min = max(0, int(center_x - zoom_radius))
+        x_max = min(ssh.shape[1], int(center_x + zoom_radius))
+
+        # Get the corresponding lat/lon values
+        lon_zoom = lon[x_min:x_max]
+        lat_zoom = lat[y_min:y_max]
+        
+        # Create a figure and axis for plotting
+        plt.figure(figsize=(10, 8))
+        
+        # Plot the Okubo-Weiss contours
+        contour = plt.contour(lon_zoom, lat_zoom, ow[y_min:y_max, x_min:x_max], levels=20, cmap='viridis')
+        plt.clabel(contour, inline=True, fontsize=8)
+
+        # Overlay the SSH data
+        plt.imshow(ssh[y_min:y_max, x_min:x_max], extent=(lon[x_min], lon[x_max], lat[y_max], lat[y_min]), origin='upper', alpha=0.5, cmap='Blues')
+
+        # Plot the eddy center
+        #plt.scatter(lon[center_x], lat[center_y], color='red', marker='o', label='Eddy Center')
+
+        # Plot velocity quivers
+        subsample = 2  # Show every nth point
+        u_zoom = u_geo[y_min:y_max:subsample, x_min:x_max:subsample]
+        v_zoom = v_geo[y_min:y_max:subsample, x_min:x_max:subsample]
+        lon_quiver = lon[x_min:x_max:subsample]
+        lat_quiver = lat[y_min:y_max:subsample]
+        
+        plt.quiver(lon_quiver, lat_quiver, u_zoom, v_zoom,
+                  alpha=0.5, scale=20, width=0.003)
+
+        # Add titles and labels
+        plt.title('Zoomed Eddy with Okubo-Weiss Contours')
+        plt.xlabel('Longitude')
+        plt.ylabel('Latitude')
+        plt.legend()
+        
+        # Save the figure
+        results_dir = os.path.join(os.path.dirname(__file__), '..', 'results')
+        os.makedirs(results_dir, exist_ok=True)
+        plt.savefig(os.path.join(results_dir, 'zoomed_eddy_with_contours.png'), dpi=300)
+        plt.show()
+        return

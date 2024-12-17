@@ -63,6 +63,7 @@ eddies = EddyMethods.global_detect(ow=ow,
 
 
 #==========Section 4: plot=============
-#Plotting.plot_zoomed_eddy(ssh, ugos, vgos, eddies[1], lat, lon)
+#Plotting.plot_zoomed_eddy(ssh, ugos, vgos, eddies[0], lat, lon)
 Plotting.plot_eddy_detection(ssh, geos_vel, eddies, lat, lon)
+#Plotting.plot_zoomed_eddy_with_contours(ssh, ugos, vgos, eddies[0], lat, lon, ow)
 breakpoint()
