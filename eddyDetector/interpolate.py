@@ -1,8 +1,3 @@
-# stereographic projection preserves angles and shapes near the equator
-# lon_0 is the central meridian
-# lat_0 is the latitude of origin
-# lat_ts is the latitude of true scale, where we want the projection least distorted
-
 import numpy as np
 import logging
 import matplotlib.pyplot as plt
@@ -24,12 +19,10 @@ class InterpolateSLD:
         self.lat = self.df['lat']
         self.var_list = ['u', 'v', 'ssh', 'net_vel']
         self.interpolated_vars = {}
-        self.init_interpolator()
         return
 
-    def init_interpolator(self):
-        self.logger.info(f"Initializing interpolator")
-        new_shape = int(self.df['u'].shape[0]*5), int(self.df['u'].shape[1]*5)
+    def interpolate_grid(self, scale_factor_interpolation):
+        new_shape = int(self.df['u'].shape[0]*scale_factor_interpolation), int(self.df['u'].shape[1]*scale_factor_interpolation)
         lon_new_vals = np.linspace(self.lon.min(), self.lon.max(), new_shape[1])
         lat_new_vals = np.linspace(self.lat.min(), self.lat.max(), new_shape[0])
         lat_new_points, lon_new_points = np.meshgrid(lat_new_vals, lon_new_vals, indexing='ij') # index order for (y, x) grid
@@ -38,8 +31,9 @@ class InterpolateSLD:
         for name in self.var_list:
             interpolator = RegularGridInterpolator(original_points, self.df[name], method='linear', bounds_error=False, fill_value=np.nan)
             self.interpolated_vars[name] = interpolator(points_new).reshape(new_shape[0], new_shape[1])
+        self.logger.info(f"Interpolated variable data {self.var_list} with original shape: {self.df['u'].shape} and new shape: {self.interpolated_vars['u'].shape}")
         #self.test_plot_interpolation(lon_new_vals, lat_new_vals)
-        return
+        return self.interpolated_vars
 
     def test_plot_interpolation(self, lon_new_vals, lat_new_vals):
         fig = plt.figure(figsize=(16, 6*len(self.var_list)))

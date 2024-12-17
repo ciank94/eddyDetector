@@ -1,7 +1,5 @@
-from turtle import st
 import xarray as xr
 import numpy as np
-from typing import Dict, Union, List
 import cdsapi
 import zipfile
 import os

@@ -2,14 +2,7 @@
 # ===========Section 0: imports=============
 import numpy as np
 import matplotlib.pyplot as plt
-from pyproj import proj
-from eddyDetector import (
-    EddyMethods,
-    FileExplorerSLD,
-    ReaderSLD,
-    InterpolateSLD,
-    Plotting,
-)
+from eddyDetector import *
 
 # ==========Section 1: Parameters============= (stuff I will change a lot, others in a ./input_files/yaml file)
 datetime_start = "2017-01-01"
@@ -19,24 +12,19 @@ output_filepath = './output_files'
 lat_bounds = (-73, -50)
 lon_bounds = (-70, -31)
 time_index = 0 # index for time dimension (test)
-proj_name = 'merc'
+scale_factor_interpolation = 5
 
 # ==========Section 2: Prepare data=============
 fileExp = FileExplorerSLD(datetime_start, datetime_end) # initiate file explorer for sea-level data (SLD) input files
 fileExp.download_check(input_filepath) # check if files are already downloaded
 reader = ReaderSLD(fileExp, time_index) # initiate reader for sea-level data (SLD) input files at time index
-df = reader.subset_netcdf(lon_bounds, lat_bounds) # subset data
-interpolator =InterpolateSLD(df) # initiate interpolator with latitude and longitude meshgrid
-
+ncfile_subset = reader.subset_netcdf(lon_bounds, lat_bounds) # subset data
+interpolator = InterpolateSLD(ncfile_subset) # initiate interpolator with latitude and longitude meshgrid
+data = interpolator.interpolate_grid(scale_factor_interpolation) # interpolate data
 breakpoint()
-
-
-#==========Section 2: filter dataset=============
-new_shape = (int(subset_df['ugos'].shape[0]*5), int(subset_df['ugos'].shape[1]*5))
-df = EddyMethods.interpolate_grid(subset_df, new_shape)
+#==========Section 2: Detect eddies=============
 val_ow, vorticity = EddyMethods.calculate_okubo_weiss(np.array(df['ugos']), np.array(df['vgos']))
 ow, cyc_mask, acyc_mask = EddyMethods.eddy_filter(val_ow, vorticity)
-#[global_minima, global_minima_mask] = EddyMethods.find_global_minima_with_masking(ow, max_eddies=1000, mask_radius=5)
 
 
 #==========Section 3: algorithm=============

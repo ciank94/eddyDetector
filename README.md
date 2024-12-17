@@ -33,6 +33,25 @@ source .venv/bin/activate
 ```bash
 python -m pip install cdsapi numpy xarray scipy matplotlib netcdf4
 ```
+## Directory Structure
+
+```bash
+findEddy/
+├── eddyDetector/
+│   ├── __init__.py
+│   ├── eddy.py
+│   ├── interpolate.py
+│   ├── plotting.py
+│   └── reader.py
+├── figures/
+├── input_files/
+├── output_files/
+├── tests/
+├── LICENSE
+├── pyproject.toml
+└── README.md
+```
+
 
 ## Project Structure
 
