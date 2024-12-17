@@ -81,7 +81,7 @@ Files for testing the code.
 
 ## Usage (see for example `usage/detect.py`)
 
-first, import modules from the eddyDetector package:
+first, import all modules from the eddyDetector package:
 
 ```python
 # ===========Section 0: imports=============
