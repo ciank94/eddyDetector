@@ -1,4 +1,4 @@
-# findEddy
+# eddyDetector
 
 A Python package for efficient eddy detection in oceanographic data using a hybrid approach based on:
 - Okubo-Weiss (OW) parameter
@@ -9,7 +9,7 @@ A Python package for efficient eddy detection in oceanographic data using a hybr
 
 ### 1. Clone the Repository
 ```bash
-git clone git@github.com:ciank94/findEddy.git
+git clone git@github.com:ciank94/eddyDetector.git
 ```
 
 ### 2. Set Up Virtual Environment
@@ -26,7 +26,7 @@ source .venv/bin/activate
 ### 3. Install in development mode
 
 ```bash
- python -m pip install -e path/to/findEddy
+ python -m pip install -e {path/to/eddyDetector}
 ```
 ### 4. Install dependencies
 
@@ -38,7 +38,7 @@ python -m pip install cdsapi numpy xarray scipy matplotlib netcdf4
 Important folders and files in the project:
 
 ```bash
-findEddy/
+eddyDetector/
 ├── eddyDetector/
 │   ├── __init__.py
 │   ├── eddy.py
@@ -61,34 +61,35 @@ findEddy/
 
 ### Source Code (`eddyDetector/`)
 - **`__init__.py`**: Module initialization
+- **`eddy.py`**: Eddy detection algorithm
+- **`interpolate.py`**: Data interpolation
+- **`plotting.py`**: Visualization
 - **`reader.py`**: Data acquisition and preprocessing
-  - Download functionality for oceanographic data
-  - NetCDF file subsetting capabilities
-- **`eddy_methods.py`**: Core eddy detection algorithms
-  - Okubo-Weiss parameter calculation
-  - Eddy detection and filtering methods
-- **`plotting.py`**: Visualization tools
-  - Eddy detection result plotting
-  - Geostrophic velocity visualization
+
+### Figures (`figures/`)
+Storage for generated plots
+
+### Input (`input_files/`)
+input data storage
+
+### Output (`output_files/`)
+- eddy detection results
+- eddy detection statistics
 
 ### Tests (`tests/`)
-- **`test.py`**: Integration tests covering the complete workflow
-  - Data download
-  - Processing
-  - Visualization
-
-### Output (`results/`)
-- Storage for generated plots and analysis results
-- Eddy detection visualizations
+Files for testing the code.
 
 ## Usage (see for example `usage/detect.py`)
 
+first, import modules from the eddyDetector package:
+
 ```python
 # ===========Section 0: imports=============
-import numpy as np
-import matplotlib.pyplot as plt
 from eddyDetector import *
+```
 
+then, define parameters for data acquisition, preprocessing, and simulation:
+```python
 # ==========Section 1: Parameters============= (stuff I will change a lot, others in a ./input_files/yaml file)
 datetime_start = "2017-01-01"
 datetime_end = "2017-02-01"
@@ -98,7 +99,10 @@ lat_bounds = (-73, -50)
 lon_bounds = (-70, -31)
 time_index = 0 # index for time dimension (test)
 scale_factor_interpolation = 5
+```
 
+preprocess data:
+```python	
 # ==========Section 2: Prepare data=============
 fileExp = FileExplorerSLD(datetime_start, datetime_end) # initiate file explorer for sea-level data (SLD) input files
 fileExp.download_check(input_filepath) # check if files are already downloaded
@@ -106,12 +110,6 @@ reader = ReaderSLD(fileExp, time_index) # initiate reader for sea-level data (SL
 ncfile_subset = reader.subset_netcdf(lon_bounds, lat_bounds) # subset data
 interpolator = InterpolateSLD(ncfile_subset) # initiate interpolator with latitude and longitude meshgrid
 data = interpolator.interpolate_grid(scale_factor_interpolation) # interpolate data
-
-# ==========Section 3: Detect eddies=============
-todo
-
-# Detect and visualize eddies
-# See test.py for complete workflow example
 ```
 
 ## License
