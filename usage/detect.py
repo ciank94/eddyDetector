@@ -25,6 +25,7 @@ data = interpolator.interpolate_grid(scale_factor_interpolation) # interpolate d
 #==========Section 2: Detect eddies=============
 detector = DetectEddiesSLD(data) # initiate eddy detector
 detector.okubo_weiss() # calculate Okubo-Weiss field and filter with threshold
+detected_eddies = detector.eddy_algorithm() # detect eddies using global minima in the Okubo-Weiss field
 breakpoint()
 
 val_ow, vorticity = EddyMethods.calculate_okubo_weiss(np.array(df['ugos']), np.array(df['vgos']))

@@ -68,7 +68,7 @@ class DetectEddiesSLD:
         self.acyc_mask = self.vorticity > 0
         return
 
-    def detect_algorithm(self, max_eddies=500):
+    def eddy_algorithm(self):
         """
         Detect eddies using global minima in the Okubo-Weiss field.
         Invalid centers are screened out by masking the point.
@@ -81,6 +81,7 @@ class DetectEddiesSLD:
         detected_eddies = []
         ow_mask = self.ow.copy()
         counter = -1
+        max_eddies=500
         
         while len(detected_eddies) < max_eddies and counter < 1000:
             counter += 1
@@ -91,22 +92,19 @@ class DetectEddiesSLD:
                 break
 
             # Try to detect an eddy at this minimum
-            [isEddy, eddy_info, ow_new] = EddyMethods.detect_and_mask_eddy(
-                ow_mask, y, x, mag_uv, u_geo, v_geo, ssh, radius=15, m_points=32
-             )
+            [isEddy, eddy_info, ow_new] = self.screen_eddy(ow_mask, y, x)
 
             if isEddy:
                 # Valid center - mask the entire eddy region
                 ow_mask = ow_new
                 detected_eddies.append(eddy_info)
-                #EddyMethods.plot_eddy_info(ssh, mag_uv, eddy_info)
-                self.logger.info(f"Detected eddy at: ({y}, {x})")
+                self.logger.info(f"Found eddy at ({eddy_info['center']})")
+                breakpoint()
             else:
                 # Invalid center - just mask this single point
                 ow_mask[y:y+2, x:x+2] = np.nan
-                logging.info(f"Screened out center at: ({y}, {x})")
         
-        print(f"Found {len(detected_eddies)} eddies")
+        self.logger.info(f"Found {len(detected_eddies)} eddies")
         return detected_eddies
 
     def find_global_minima(self, ow_mask, n_minima=5):
@@ -131,7 +129,6 @@ class DetectEddiesSLD:
             # Check if point is too close to boundaries
             if y <= 3 or x <= 3 or y >= ow_mask.shape[0]-1 or x >= ow_mask.shape[1]-1:
                 ow_mask[y, x] = np.nan
-                self.logger.info(f"Screened out center at: ({y}, {x})")
                 continue
             valid_points.append((y, x))
 
@@ -153,72 +150,16 @@ class DetectEddiesSLD:
         self.previous_point = (y, x)
         return 'ok', y, x
 
-    def symmetry_check(self, points, mag_uv, u_geo, v_geo, ssh):
-        """
-        Check if a contour is symmetric around a center point.
-
-        :param points: Contour points
-        :param mag_uv: Magnitude of geostrophic velocity
-        :param u_geo: U component of geostrophic velocity
-        :param v_geo: V component of geostrophic velocity
-        :param ssh: Sea surface height
-        :return: True if contour is symmetric, False otherwise
-        """
-       
-        # Extract border points and corresponding values
-        y = points[:, 0].astype(int)
-        x = points[:, 1].astype(int)
-        n_points = len(y)
-        u_geo_border = u_geo[y, x]
-        v_geo_border = v_geo[y, x]
-        ssh_border = ssh[y, x]
-        mag_uv_border = mag_uv[y, x]
-
-        if any(np.isnan(u_geo_border)) or any(np.isnan(v_geo_border)) or any(np.isnan(ssh_border)) or any(np.isnan(mag_uv_border)):
-            return False
-    
-        # New check for opposite points using np.roll
-        u_geo_rolled = np.roll(u_geo_border, n_points // 2)
-        v_geo_rolled = np.roll(v_geo_border, n_points // 2)
-        ssh_rolled = np.roll(ssh_border, n_points // 2)
-        mag_uv_rolled = np.roll(mag_uv_border, n_points // 2)
-
-        # Compute cosine similarity between opposite points
-        dot_products_opposite = np.array([np.dot([u1, v1], [u2, v2]) 
-                                    for u1, v1, u2, v2 in zip(u_geo_border, v_geo_border, u_geo_rolled, v_geo_rolled)])
-        # Compute cosine similarity between opposite points
-        norms_orig = np.linalg.norm(np.column_stack((u_geo_border, v_geo_border)), axis=1)
-        norms_rolled = np.linalg.norm(np.column_stack((u_geo_rolled, v_geo_rolled)), axis=1)
-        cos_similarities_opposite = dot_products_opposite / (norms_orig * norms_rolled)
-
-        # Compute ratio between opposite points
-        ratio_ssh_rolled = np.abs(ssh_rolled) / np.abs(ssh_border)
-        ratio_mag_uv_rolled = np.abs(mag_uv_rolled) / np.abs(mag_uv_border)
-        
-        # Check if contour is symmetric
-        mag_uv_symmetry_check = sum((ratio_mag_uv_rolled < 1/1.5) | (ratio_mag_uv_rolled > 1.5))
-        velocity_symmetry_check = sum(np.abs(cos_similarities_opposite)<0.5) 
-        ssh_symmetry_check = sum((ratio_ssh_rolled < 1/1.5) | (ratio_ssh_rolled > 1.5)) 
-        if (mag_uv_symmetry_check/n_points < 0.8) and (velocity_symmetry_check/n_points < 0.8) and (ssh_symmetry_check/n_points < 0.9):
-            return True 
-        else:
-            return False
-
-    @staticmethod
-    def detect_and_mask_eddy(ow, center_y, center_x, mag_uv, u_geo, v_geo, ssh, radius, m_points):
+    def screen_eddy(self, ow, center_y, center_x):
         """Detect and mask an eddy at the specified center point.
         
         :param ow: Okubo-Weiss parameter field
         :param center_y: y-coordinate of center
         :param center_x: x-coordinate of center
-        :param mag_uv: velocity magnitude field
-        :param u_geo: zonal velocity field
-        :param v_geo: meridional velocity field
-        :param ssh: sea surface height field
-        :param radius: initial search radius
-        :param m_points: number of points to use for contour (default: 32)
         :return: (is_eddy, eddy_info, masked_ow)
         """
+        radius = 20
+        m_points = 32
         # Check if center is already masked
         if np.isnan(ow[int(center_y), int(center_x)]):
             return False, None, ow
@@ -280,7 +221,7 @@ class DetectEddiesSLD:
         contour_points = np.column_stack((contour_y, contour_x))
 
         # Check if variables are symmetric across the center of the eddy
-        symmetry_check = EddyMethods.symmetry_check(contour_points, mag_uv, u_geo, v_geo, ssh)
+        symmetry_check = self.symmetry_check(contour_points)
         if not symmetry_check:
             return False, None, ow
         
@@ -310,48 +251,49 @@ class DetectEddiesSLD:
         
         return True, {'center': (y_c, x_c), 'border': contour_points, 'mask': mask}, new_ow
 
-    @staticmethod
-    def interpolate_grid(subset_df: Dict[str, xr.DataArray],
-                        new_shape: Tuple[int, int]):
+    def symmetry_check(self, points):
         """
-        interpolate a 2D matrix using linear interpolation.
+        Check if a contour is symmetric around a center point.
 
-        :param subset_df: dictionary with data subsetted from .nc file
-        :param new_shape: tuple specifying the desired shape of the interpolated matrix (new_n, new_m).
-        :returns: 2D array of interpolated values.
+        :param points: Contour points
+        :return: True if contour is symmetric, False otherwise
         """
+       
+        # Extract border points and corresponding values
+        y = points[:, 0].astype(int)
+        x = points[:, 1].astype(int)
+        n_points = len(y)
+        u_geo_border = self.u[y, x]
+        v_geo_border = self.v[y, x]
+        ssh_border = self.ssh[y, x]
+        net_vel_border = self.net_vel[y, x]
 
-        new_df = {}
-        exception_var = ['longitude', 'latitude']
-        for key in subset_df.keys():
-            if key not in exception_var:
-                print(key)
-                matrix = subset_df[key]
-                # Calculate the zoom factors for each dimension
-                zoom_factors = (new_shape[0] / matrix.shape[0], new_shape[1] / matrix.shape[1])
-                new_df[key] = zoom(matrix, zoom_factors, order=1)
+        if any(np.isnan(u_geo_border)) or any(np.isnan(v_geo_border)) or any(np.isnan(ssh_border)) or any(np.isnan(net_vel_border)):
+            return False
+    
+        # New check for opposite points using np.roll
+        u_geo_rolled = np.roll(u_geo_border, n_points // 2)
+        v_geo_rolled = np.roll(v_geo_border, n_points // 2)
+        ssh_rolled = np.roll(ssh_border, n_points // 2)
+        net_vel_rolled = np.roll(net_vel_border, n_points // 2)
 
-        lats = subset_df['ugos'].latitude.values  # Get latitude values
-        lons = subset_df['ugos'].longitude.values  # Get longitude values
-        n_lat = len(lats)
-        n_lon = len(lons)
+        # Compute cosine similarity between opposite points
+        dot_products_opposite = np.array([np.dot([u1, v1], [u2, v2]) 
+                                    for u1, v1, u2, v2 in zip(u_geo_border, v_geo_border, u_geo_rolled, v_geo_rolled)])
+        # Compute cosine similarity between opposite points
+        norms_orig = np.linalg.norm(np.column_stack((u_geo_border, v_geo_border)), axis=1)
+        norms_rolled = np.linalg.norm(np.column_stack((u_geo_rolled, v_geo_rolled)), axis=1)
+        cos_similarities_opposite = dot_products_opposite / (norms_orig * norms_rolled)
 
-        # Desired number of interpolated values
-        int_num_lat = new_df['ugos'].shape[0]
-        int_num_lon = new_df['ugos'].shape[1]
-
-        # Original indices
-        original_id_lat = np.linspace(0, n_lat - 1, num=n_lat)
-        original_id_lon = np.linspace(0, n_lon - 1, num=n_lon)
-
-        # New indices for interpolation
-        new_id_lat = np.linspace(0, n_lat - 1, num=int_num_lat)
-        new_id_lon = np.linspace(0, n_lon - 1, num=int_num_lon)
-
-        # Perform interpolation
-        lat2 = np.interp(new_id_lat, original_id_lat, lats)
-        lon2 = np.interp(new_id_lon, original_id_lon, lons)
-        new_df['longitude'] = lon2
-        new_df['latitude'] = lat2
-
-        return new_df
+        # Compute ratio between opposite points
+        ratio_ssh_rolled = np.abs(ssh_rolled) / np.abs(ssh_border)
+        ratio_net_vel_rolled = np.abs(net_vel_rolled) / np.abs(net_vel_border)
+        
+        # Check if contour is symmetric
+        velocity_symmetry_check = sum(np.abs(cos_similarities_opposite)<0.5) 
+        ssh_symmetry_check = sum((ratio_ssh_rolled < 1/1.5) | (ratio_ssh_rolled > 1.5)) 
+        net_vel_symmetry_check = sum((ratio_net_vel_rolled < 1/1.5) | (ratio_net_vel_rolled > 1.5)) 
+        if (velocity_symmetry_check/n_points < 0.8) and (ssh_symmetry_check/n_points < 0.9) and (net_vel_symmetry_check/n_points < 0.9):
+            return True 
+        else:
+            return False
