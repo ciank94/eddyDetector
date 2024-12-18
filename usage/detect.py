@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from eddyDetector import *
 
 # ==========Section 1: Parameters============= (stuff I will change a lot, others in a ./input_files/yaml file)
-datetime_start = "2017-01-01"
+datetime_start = "2017-01-25"
 datetime_end = "2017-02-01"
 input_filepath = './input_files'
 output_filepath = './output_files'

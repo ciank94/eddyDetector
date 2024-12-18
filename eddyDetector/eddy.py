@@ -18,6 +18,7 @@ class DetectEddiesSLD:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info(f"================={self.__class__.__name__}=====================")
         self.logger.info(f"Initializing {self.__class__.__name__}")
+        self.previous_point = None  # Store the previously selected point
         return
 
     def okubo_weiss(self):
@@ -30,7 +31,7 @@ class DetectEddiesSLD:
         dvy, dvx = np.gradient(self.v)   # ∂v/∂y and ∂v/∂x
         self.vorticity = (dvx - duy)
         self.ow = (dux - dvy) ** 2 + (dvx + duy) ** 2 - self.vorticity ** 2  # Sn**2 + Ss**2 + ω**2
-        self.logger.info(f"Computing Okubo-Weiss parameter with min value {np.nanmin(self.ow)} and std value {np.nanstd(self.ow[self.ow < 0])}")
+        self.logger.info(f"Computing Okubo-Weiss parameter with min value {np.nanmin(self.ow):.2e}, std value {np.nanstd(self.ow[self.ow < 0]):.2e}, and mean value {np.nanmean(self.ow[self.ow < 0]):.2e}")
         self.eddy_filter()
         return 
     
@@ -57,7 +58,7 @@ class DetectEddiesSLD:
             ow_mask = (self.ow <= threshold_u) & (self.ow >= threshold_l)
         else:
             ow_mask = 1
-            self.logger.warning('mask must be method from ' + str(methods))
+            self.logger.warning(f'mask must be method from {methods}')
 
         # Assign mask
         self.ow *= ow_mask
@@ -67,67 +68,92 @@ class DetectEddiesSLD:
         self.acyc_mask = self.vorticity > 0
         return
 
-
-
-    @staticmethod
-    def global_detect(ow, mag_uv, u_geo, v_geo, ssh, max_eddies=500):
+    def detect_algorithm(self, max_eddies=500):
         """
         Detect eddies using global minima in the Okubo-Weiss field.
         Invalid centers are screened out by masking the point.
         Valid centers result in masking the entire eddy region.
 
-        :param ow: Okubo-Weiss parameter for 2D field
-        :param mag_uv: net velocity for 2D field
-        :param u_geo: zonal component of geostrophic velocity (2D)
-        :param v_geo: meridional component of geostrophic velocity (2D)
-        :param ssh: sea surface height (2D)
         :param max_eddies: maximum number of eddies to detect (default: 500)
         :return: 
             List of detected eddy information dictionaries
         """
         detected_eddies = []
-        current_ow = ow.copy()
+        ow_mask = self.ow.copy()
         counter = -1
         
         while len(detected_eddies) < max_eddies and counter < 1000:
             counter += 1
-            # Find the current global minimum
-            if np.all(np.isnan(current_ow)):
-                break
-                
-            # Get the indices of the minimum value, ignoring NaNs
-            flat_idx = np.nanargmin(current_ow)
-            y, x = np.unravel_index(flat_idx, current_ow.shape)
 
-            if y > 3 and x > 3 and y < current_ow.shape[0] and x < current_ow.shape[1]:
-                pass
-            else:
-                current_ow[y, x] = np.nan
-                logging.info(f"Screened out center at: ({y}, {x})")
-                continue
-            
+            # find current global minimum
+            status, y, x = self.find_global_minima(ow_mask, n_minima=5)
+            if status == 'break':
+                break
+
             # Try to detect an eddy at this minimum
-            [isEddy, eddy_info, new_ow] = EddyMethods.detect_and_mask_eddy(
-                current_ow, y, x, mag_uv, u_geo, v_geo, ssh, radius=15, m_points=32
+            [isEddy, eddy_info, ow_new] = EddyMethods.detect_and_mask_eddy(
+                ow_mask, y, x, mag_uv, u_geo, v_geo, ssh, radius=15, m_points=32
              )
 
             if isEddy:
                 # Valid center - mask the entire eddy region
-                current_ow = new_ow
+                ow_mask = ow_new
                 detected_eddies.append(eddy_info)
                 #EddyMethods.plot_eddy_info(ssh, mag_uv, eddy_info)
-                logging.info(f"Detected eddy at: ({y}, {x})")
+                self.logger.info(f"Detected eddy at: ({y}, {x})")
             else:
                 # Invalid center - just mask this single point
-                current_ow[y:y+2, x:x+2] = np.nan
+                ow_mask[y:y+2, x:x+2] = np.nan
                 logging.info(f"Screened out center at: ({y}, {x})")
         
         print(f"Found {len(detected_eddies)} eddies")
         return detected_eddies
 
-    
-    @staticmethod
-    def symmetry_check(points, mag_uv, u_geo, v_geo, ssh):
+    def find_global_minima(self, ow_mask, n_minima=5):
+        """
+        Find global minima in the Okubo-Weiss field and select the furthest one from the previous point.
+
+        :param ow_mask: Okubo-Weiss field with detected eddies masked out
+        :param n_minima: Number of minimum points to consider
+        :return: tuple (status, y, x)
+            status: str - 'break' to end loop, 'ok' to proceed
+            y, x: coordinates of the selected minimum
+        """
+        if np.all(np.isnan(ow_mask)):
+            return 'break', None, None
+
+        # Find the n smallest values and their indices
+        flat_indices = np.argpartition(ow_mask.flatten(), n_minima)[:n_minima]
+        valid_points = []
+        
+        for idx in flat_indices:
+            y, x = np.unravel_index(idx, ow_mask.shape)
+            # Check if point is too close to boundaries
+            if y <= 3 or x <= 3 or y >= ow_mask.shape[0]-1 or x >= ow_mask.shape[1]-1:
+                ow_mask[y, x] = np.nan
+                self.logger.info(f"Screened out center at: ({y}, {x})")
+                continue
+            valid_points.append((y, x))
+
+        if not valid_points:
+            return 'break', None, None
+
+        # If this is the first point or no previous point exists
+        if self.previous_point is None:
+            y, x = valid_points[0]  # Take the first valid point
+        else:
+            # Calculate distances from previous point to all valid points
+            prev_y, prev_x = self.previous_point
+            distances = [np.sqrt((y - prev_y)**2 + (x - prev_x)**2) for y, x in valid_points]
+            # Select the point with maximum distance
+            max_dist_idx = np.argmax(distances)
+            y, x = valid_points[max_dist_idx]
+
+        # Update previous point
+        self.previous_point = (y, x)
+        return 'ok', y, x
+
+    def symmetry_check(self, points, mag_uv, u_geo, v_geo, ssh):
         """
         Check if a contour is symmetric around a center point.
 
