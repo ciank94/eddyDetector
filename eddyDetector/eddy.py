@@ -1,18 +1,73 @@
 from matplotlib import contour
 import numpy as np
+import logging
 import xarray as xr
 from typing import Dict, Tuple
 from scipy.ndimage import zoom
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
-import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+class DetectEddiesSLD:
+    def __init__(self, data):
+        self.net_vel = data['net_vel']
+        self.u = data['u']
+        self.v = data['v']
+        self.ssh = data['ssh']
+        self.lon = data['lon']
+        self.lat = data['lat']
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.info(f"================={self.__class__.__name__}=====================")
+        self.logger.info(f"Initializing {self.__class__.__name__}")
+        return
 
-class EddyMethods:
-    def __init__(self):
-        pass
+    def okubo_weiss(self):
+        """
+        Okubo-Weiss parameter calculation. Calculates OW parameter from normal strain (Sn) (∂u/∂x - ∂v/∂y),
+        shear strain (Ss) (∂v/∂x + ∂u/∂y) and vorticity (ω)
+
+        """
+        duy, dux = np.gradient(self.u)   # ∂u/∂y and ∂u/∂x
+        dvy, dvx = np.gradient(self.v)   # ∂v/∂y and ∂v/∂x
+        self.vorticity = (dvx - duy)
+        self.ow = (dux - dvy) ** 2 + (dvx + duy) ** 2 - self.vorticity ** 2  # Sn**2 + Ss**2 + ω**2
+        self.logger.info(f"Computing Okubo-Weiss parameter with min value {np.nanmin(self.ow)} and std value {np.nanstd(self.ow[self.ow < 0])}")
+        self.eddy_filter()
+        return 
+    
+    def eddy_filter(self):
+        """
+        Filter the Okubo-Weiss field using a threshold value and separate masks for cyclone and anti-cyclone.
+        several methods for masking eddies based on OW threshold parameters
+
+        """
+        methods = ['Chelton', 'Isern', 'Chaigneau']
+        method = methods[1]
+
+        # Chelton et al. 2007
+        if method == 'Chelton':
+            ow_mask = (self.ow <= -2e-12)
+        # Isern-Fontanet et al. 2003 filter:
+        elif method == 'Isern':
+            threshold_u = -0.2 * np.nanstd(self.ow[self.ow < 0])
+            ow_mask = (self.ow <= threshold_u)
+        # Chaigneau et al. 2008 filter
+        elif method == 'Chaigneau':
+            threshold_u = -0.2 * np.nanstd(self.ow)
+            threshold_l = -0.3 * np.nanstd(self.ow)
+            ow_mask = (self.ow <= threshold_u) & (self.ow >= threshold_l)
+        else:
+            ow_mask = 1
+            self.logger.warning('mask must be method from ' + str(methods))
+
+        # Assign mask
+        self.ow *= ow_mask
+
+        # Separate masks for cyclone and anti-cyclone depending on the vorticity polarity and magnitude
+        self.cyc_mask = self.vorticity < 0
+        self.acyc_mask = self.vorticity > 0
+        return
+
+
 
     @staticmethod
     def global_detect(ow, mag_uv, u_geo, v_geo, ssh, max_eddies=500):
@@ -122,60 +177,6 @@ class EddyMethods:
             return True 
         else:
             return False
-
-    @staticmethod
-    def eddy_filter(ow, vorticity):
-        """
-        several methods for masking eddies based on OW threshold parameters
-
-        :arg ow: raw okubo-weiss values
-        :arg vorticity: vorticity value calculated in okubo-weiss
-        :returns ow2: filter okubo-weiss variable
-        """
-        ow2 = np.copy(ow)  # copy the original matrix
-        methods = ['Chelton', 'Isern', 'Chaigneau']
-        method = methods[1]
-
-        # Chelton et al. 2007
-        if method == 'Chelton':
-            ow_mask = (ow <= -2e-12)
-        # Isern-Fontanet et al. 2003 filter:
-        elif method == 'Isern':
-            threshold_u = -0.2 * np.nanstd(ow[ow < 0])
-            ow_mask = (ow <= threshold_u)
-        # Chaigneau et al. 2008 filter
-        elif method == 'Chaigneau':
-            threshold_u = -0.2 * np.nanstd(ow)
-            threshold_l = -0.3 * np.nanstd(ow)
-            ow_mask = (ow <= threshold_u) & (ow >= threshold_l)
-        else:
-            ow_mask = 1
-            print('mask must be method from ' + str(methods))
-
-        # Assign mask
-        ow2 *= ow_mask
-
-        # Separate masks for cyclone and anti-cyclone depending on the vorticity polarity and magnitude
-        cyc_mask = vorticity < 0
-        acyc_mask = vorticity > 0
-
-        return ow2, cyc_mask, acyc_mask
-
-    @staticmethod
-    def calculate_okubo_weiss(u_geo, v_geo):
-        """
-        Okubo-Weiss parameter calculation. Calculates OW parameter from normal strain (Sn) (∂u/∂x - ∂v/∂y),
-        shear strain (Ss) (∂v/∂x + ∂u/∂y) and vorticity (ω)
-
-        :arg u_geo: u component of velocity field
-        :arg v_geo: v component of velocity field
-        :returns OW: Okubo-Weiss field
-        """
-        duy, dux = np.gradient(u_geo, 1, 1)   # ∂u/∂y and ∂u/∂x
-        dvy, dvx = np.gradient(v_geo, 1, 1)   # ∂v/∂y and ∂v/∂x
-        vorticity = (dvx - duy)
-        ow = (dux - dvy) ** 2 + (dvx + duy) ** 2 - vorticity ** 2  # Sn**2 + Ss**2 + ω**2
-        return ow, vorticity
 
     @staticmethod
     def detect_and_mask_eddy(ow, center_y, center_x, mag_uv, u_geo, v_geo, ssh, radius, m_points):

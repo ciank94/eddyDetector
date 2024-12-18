@@ -7,10 +7,27 @@ import datetime
 import logging
 
 # Configure logging format to include the class name
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(name)s - %(levelname)s - %(message)s'
-)
+log_format = '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+date_format = '%Y-%m-%d %H:%M:%S'
+
+# Create logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Remove any existing handlers
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+
+# Create console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter(log_format, date_format))
+logger.addHandler(console_handler)
+
+# Create file handler
+log_file = os.path.join('output_files', 'eddy_detector.log')
+file_handler = logging.FileHandler(log_file, mode='w')
+file_handler.setFormatter(logging.Formatter(log_format, date_format))
+logger.addHandler(file_handler)
 
 class FileExplorerSLD:
     def __init__(self, datetime_start, datetime_end):
@@ -35,8 +52,8 @@ class FileExplorerSLD:
         self.n_dates = len(self.datetime)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info(f"================={self.__class__.__name__}=====================")
-        self.logger.info(f"Initializing {self.__class__.__name__} with start date: {datetime_start} and end date: {datetime_end}"
-                         f"and number of dates: {self.n_dates}")
+        self.logger.info(f"Initializing {self.__class__.__name__} with start date: {datetime_start} and end date: {datetime_end}")
+        self.logger.info(f"Number of dates chosen: {self.n_dates}")
         self.logger.info(f"Files with prefix: {self.file_prefix} and suffix: {self.file_suffix}")
         return
 
@@ -151,5 +168,3 @@ class ReaderSLD:
         self.data.close()
         self.logger.info(f"Closed NetCDF file: {self.file}")
         return df
-
-    

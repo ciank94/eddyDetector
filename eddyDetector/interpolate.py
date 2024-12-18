@@ -3,12 +3,6 @@ import logging
 import matplotlib.pyplot as plt
 from scipy.interpolate import RegularGridInterpolator
 
-# Configure logging format to include the class name
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(name)s - %(levelname)s - %(message)s'
-)
-
 class InterpolateSLD:
     def __init__(self, df):
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -32,7 +26,11 @@ class InterpolateSLD:
             interpolator = RegularGridInterpolator(original_points, self.df[name], method='linear', bounds_error=False, fill_value=np.nan)
             self.interpolated_vars[name] = interpolator(points_new).reshape(new_shape[0], new_shape[1])
         self.logger.info(f"Interpolated variable data {self.var_list} with original shape: {self.df['u'].shape} and new shape: {self.interpolated_vars['u'].shape}")
-        #self.test_plot_interpolation(lon_new_vals, lat_new_vals)
+        self.interpolated_vars['lon'] = lon_new_vals
+        self.interpolated_vars['lat'] = lat_new_vals
+        self.logger.info(f"Interpolated longitude and latitude with original shapes: {self.lat.shape} and {self.lon.shape} "
+                         f"and new shapes: {lat_new_vals.shape} and {lon_new_vals.shape}")
+        # self.test_plot_interpolation(lon_new_vals, lat_new_vals)
         return self.interpolated_vars
 
     def test_plot_interpolation(self, lon_new_vals, lat_new_vals):

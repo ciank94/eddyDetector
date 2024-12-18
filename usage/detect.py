@@ -21,8 +21,12 @@ reader = ReaderSLD(fileExp, time_index) # initiate reader for sea-level data (SL
 ncfile_subset = reader.subset_netcdf(lon_bounds, lat_bounds) # subset data
 interpolator = InterpolateSLD(ncfile_subset) # initiate interpolator with latitude and longitude meshgrid
 data = interpolator.interpolate_grid(scale_factor_interpolation) # interpolate data
-breakpoint()
+
 #==========Section 2: Detect eddies=============
+detector = DetectEddiesSLD(data) # initiate eddy detector
+detector.okubo_weiss() # calculate Okubo-Weiss field and filter with threshold
+breakpoint()
+
 val_ow, vorticity = EddyMethods.calculate_okubo_weiss(np.array(df['ugos']), np.array(df['vgos']))
 ow, cyc_mask, acyc_mask = EddyMethods.eddy_filter(val_ow, vorticity)
 
