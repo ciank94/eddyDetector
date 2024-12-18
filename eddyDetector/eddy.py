@@ -98,8 +98,7 @@ class DetectEddiesSLD:
                 # Valid center - mask the entire eddy region
                 ow_mask = ow_new
                 detected_eddies.append(eddy_info)
-                self.logger.info(f"Found eddy at ({eddy_info['center']})")
-                breakpoint()
+                self.logger.info(f"Accepted eddy center at y, x: ({y}, {x}) for step {counter}")
             else:
                 # Invalid center - just mask this single point
                 ow_mask[y:y+2, x:x+2] = np.nan
@@ -205,17 +204,17 @@ class DetectEddiesSLD:
             return False, None, ow
             
         # Calculate the semi-axes
-        a = (x_b[1] - x_b[0]) / 2
-        b = (y_b[1] - y_b[0]) / 2
+        x_radius = (x_b[1] - x_b[0]) / 2
+        y_radius = (y_b[1] - y_b[0]) / 2
         
         # Calculate the center of the ellipse
-        x_c = (x_b[1] + x_b[0]) / 2
-        y_c = (y_b[1] + y_b[0]) / 2
+        x_center = (x_b[1] + x_b[0]) / 2
+        y_center = (y_b[1] + y_b[0]) / 2
         
         # Generate points along the ellipse
         theta = np.linspace(0, 2*np.pi, m_points)
-        contour_x = x_c + a * np.cos(theta)
-        contour_y = y_c + b * np.sin(theta)
+        contour_x = x_center + x_radius * np.cos(theta)
+        contour_y = y_center + y_radius * np.sin(theta)
         
         # Stack points
         contour_points = np.column_stack((contour_y, contour_x))
@@ -236,20 +235,35 @@ class DetectEddiesSLD:
         inside_points = Path(contour_points).contains_points(points)
         mask = inside_points.reshape(ow.shape)
         
-        # Ensure center point and immediate neighborhood is masked
-        y_center, x_center = int(center_y), int(center_x)
-        mask_radius = max(2, radius // 2)  # At least 2 pixels, or half the radius
-        y_min = max(0, y_center - mask_radius)
-        y_max = min(ow.shape[0], y_center + mask_radius + 1)
-        x_min = max(0, x_center - mask_radius)
-        x_max = min(ow.shape[1], x_center + mask_radius + 1)
-        mask[y_min:y_max, x_min:x_max] = True
         
         # Apply the mask
         new_ow = ow.copy()
         new_ow[mask] = np.nan
-        
-        return True, {'center': (y_c, x_c), 'border': contour_points, 'mask': mask}, new_ow
+
+        # Check if anticyclone or cyclone
+        if np.sum(self.vorticity[mask]) > 0:
+            eddy_cylone = "anticyclonic"
+        elif np.sum(self.vorticity[mask]) < 0:
+            eddy_cylone = "cyclonic"
+
+
+        # Calculate eddy properties
+        eddy_info = {
+            'center': (y_center, x_center),
+            'radius': (x_radius, y_radius),
+            'eddy_cylone': eddy_cylone,
+            'ssh_center': self.ssh[int(y_center), int(x_center)],
+            'net_vel_center': self.net_vel[int(y_center), int(x_center)],
+            'kinetic_energy': np.nanmean(self.net_vel[mask]),
+            'border': contour_points,
+            'mask': mask,
+            'n_points': np.sum(mask),
+            'vorticity': np.nanmean(self.vorticity[mask]),
+            'vorticity_std': np.nanstd(self.vorticity[mask]),
+            'ow': np.nanmean(self.ow[mask]),
+            'ow_std': np.nanstd(self.ow[mask])
+        }
+        return True, eddy_info, new_ow
 
     def symmetry_check(self, points):
         """
@@ -297,3 +311,15 @@ class DetectEddiesSLD:
             return True 
         else:
             return False
+
+class OutputSLD:
+    def __init__(self, eddy_info):
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.info(f"================={self.__class__.__name__}=====================")
+        self.logger.info(f"Initializing {self.__class__.__name__}")
+        self.eddy_info = eddy_info
+        return
+
+    def store_properties(self):
+        self.logger.info(f"Storing eddy properties")
+        return
