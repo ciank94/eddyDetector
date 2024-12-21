@@ -26,10 +26,7 @@ data = interpolator.interpolate_grid(scale_factor_interpolation) # interpolate d
 detector = DetectEddiesSLD(data) # initiate eddy detector object and calculate Okubo-Weiss field and filter with threshold
 eddy_info = detector.eddy_algorithm() # detect eddies using global minima in the Okubo-Weiss field
 output = OutputSLD(eddy_info) # initiate output object with eddy properties
-breakpoint()
 
 #==========Section 3: Plot eddies=============
-#Plotting.plot_zoomed_eddy(ssh, ugos, vgos, eddies[0], lat, lon)
-Plotting.plot_eddy_detection(ssh, geos_vel, eddies, lat, lon)
-#Plotting.plot_zoomed_eddy_with_contours(ssh, ugos, vgos, eddies[0], lat, lon, ow)
-breakpoint()
+PlotEddy(data, eddy_info)
+

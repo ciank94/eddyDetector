@@ -4,48 +4,55 @@ import os
 from scipy.interpolate import RegularGridInterpolator, interp1d
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+import logging
 
-class Plotting:
-    def __init__(self):
-        pass
+class PlotEddy:
+    def __init__(self, data, eddy_info):
+        self.net_vel = data['net_vel']
+        self.u = data['u']
+        self.v = data['v']
+        self.ssh = data['ssh']
+        self.lon = data['lon']
+        self.lat = data['lat']
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.info(f"================={self.__class__.__name__}=====================")
+        self.logger.info(f"Initializing {self.__class__.__name__}")
+        self.eddy_info = eddy_info
+        self.plot_eddy_detection(self.ssh, self.net_vel, self.eddy_info, self.lat, self.lon)
+        return
     
 
     @staticmethod
     def plot_eddy_detection(ssh, geos_vel, eddy_borders, lat, lon):
         """
-        Plot the detected eddies with coastlines and geographic features.
-
+        Plot detected eddies with geographic features.
+        
         :param ssh: Sea surface height data
-        :param geos_vel: Geostrophic velocity magnitude
+        :param geos_vel: Geostrophic velocity data
         :param eddy_borders: List of detected eddy borders
         :param lat: Latitude coordinates
         :param lon: Longitude coordinates
         """
         # Create figure with a specific projection
-        plt.figure(figsize=(15, 10))
-        ax = plt.axes(projection=ccrs.PlateCarree())
+        plot_transform = ccrs.PlateCarree()
 
-        # Add coastlines and other features
-        ax.coastlines(resolution='50m', linewidth=1)
-        ax.add_feature(cfeature.LAND, facecolor='lightgray')
-        ax.add_feature(cfeature.OCEAN, facecolor='lightblue', alpha=0.3)
-        ax.add_feature(cfeature.BORDERS, linestyle=':')
-        ax.gridlines(draw_labels=True)
+        plt.figure(figsize=(15, 10))
+        ax = plt.axes(projection=plot_transform)
 
         # Plot SSH
         ssh_plot = ax.contour(lon, lat, ssh, 
-                             transform=ccrs.PlateCarree(),
+                             transform=plot_transform,
                              levels=60,
                              colors='gray',
                              alpha=0.5)
-
+        
         # Plot velocity magnitude
         vel_plot = ax.contourf(lon, lat, geos_vel, 
-                              transform=ccrs.PlateCarree(),
+                              transform=plot_transform,
                               levels=30,
                               cmap='hot')
         plt.colorbar(vel_plot, label='Geostrophic Velocity')
-
+        
         # Plot eddy borders
         for eddy in eddy_borders:
             if 'border' in eddy:
@@ -56,13 +63,21 @@ class Plotting:
                     
                     # Plot the border directly
                     ax.plot(lon[border_x], lat[border_y], 
-                           c = 'w', 
+                           c='w', 
                            linewidth=2,
-                           label='Eddy Border')
+                           label='Eddy Border',
+                           transform=plot_transform)
+
+        # Now add coastlines and other features on top
+        ax.coastlines(resolution='10m', linewidth=1)
+        ax.add_feature(cfeature.LAND, facecolor='lightgray', zorder=3)
+        ax.add_feature(cfeature.OCEAN, facecolor='lightblue', alpha=0.3, zorder=1)
+        ax.add_feature(cfeature.BORDERS, linestyle=':', zorder=3)
+        ax.gridlines(draw_labels=True)
 
         # Set plot extent to data bounds with some padding
         ax.set_extent([lon.min(), lon.max(), lat.min(), lat.max()], 
-                     crs=ccrs.PlateCarree())
+                     crs=plot_transform)
 
         # Add title and labels
         plt.title('Eddy Detection with Geographic Features')
