@@ -22,6 +22,7 @@ class DetectEddiesSLD:
         self.previous_point = None  # Store the previously selected point
         self.sorted_points = None  # Store the sorted points (non-nan and non-zero ow)
         self.ow_mask = None # store the ow mask
+        self.isEddy = True # store whether the point is an eddy
         return
 
     def okubo_weiss(self):
@@ -83,7 +84,6 @@ class DetectEddiesSLD:
         self.ow_mask = self.ow.copy()
         counter = -1
         max_eddies=500
-        isEddy = False
         self.sort_indices()
         
         while len(detected_eddies) < max_eddies and counter < 10000:
@@ -95,16 +95,13 @@ class DetectEddiesSLD:
                 break
 
             # Try to detect an eddy at this minimum
-            [isEddy, eddy_info] = self.screen_eddy(y, x)
-
-            if isEddy:
-                #self.persistent_mask = ow_new.copy()  # Update the persistent mask
-                detected_eddies.append(eddy_info)
-                self.logger.info(f"Accepted eddy center at y, x: ({y}, {x}) for step {counter}")
+            if self.isEddy:
+                eddy_info = self.screen_eddy(y, x)
+                if self.isEddy:
+                    detected_eddies.append(eddy_info)
+                    self.logger.info(f"Accepted eddy center at y, x: ({y}, {x}) for step {counter}")
             else:
-                # Invalid center - just mask this single point
                 self.ow_mask[y:y+2, x:x+2] = np.nan
-                #self.persistent_mask[y:y+2, x:x+2] = np.nan  # Update the persistent mask
         
         self.logger.info(f"Found {len(detected_eddies)} eddies")
         return detected_eddies
@@ -174,6 +171,11 @@ class DetectEddiesSLD:
 
         # Update previous point
         self.previous_point = (y, x)
+        if np.isnan(self.ow_mask[y, x]):
+            self.isEddy = False
+            return 'ok', y, x
+            
+        self.isEddy = True
         return 'ok', y, x
 
     def screen_eddy(self, center_y, center_x):
@@ -187,7 +189,8 @@ class DetectEddiesSLD:
         m_points = 32
         # Check if center is already masked
         if np.isnan(self.ow_mask[int(center_y), int(center_x)]):
-            return False, None
+            self.isEddy = False
+            return None
             
         # Get OW extent in x and y directions
         y_extent = self.ow_mask[:, int(center_x)]
@@ -227,7 +230,8 @@ class DetectEddiesSLD:
                 
         # Check if we found boundaries in both directions
         if len(x_b) != 2 or len(y_b) != 2:
-            return False, None
+            self.isEddy = False
+            return None
             
         # Calculate the semi-axes
         x_radius = (x_b[1] - x_b[0]) / 2
@@ -248,7 +252,8 @@ class DetectEddiesSLD:
         # Check if variables are symmetric across the center of the eddy
         symmetry_check = self.symmetry_check(contour_points)
         if not symmetry_check:
-            return False, None
+            self.isEddy = False
+            return None
         
         # Create mask using contour points
         mask = np.zeros_like(self.ow_mask, dtype=bool)
@@ -285,7 +290,8 @@ class DetectEddiesSLD:
             'ow': np.nanmean(self.ow[mask]),
             'ow_std': np.nanstd(self.ow[mask])
         }
-        return True, eddy_info
+        self.isEddy = True
+        return eddy_info
 
     def symmetry_check(self, points):
         """
