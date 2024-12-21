@@ -33,6 +33,9 @@ source .venv/bin/activate
 ```bash
 python -m pip install cdsapi numpy xarray scipy matplotlib netcdf4
 ```
+authentication file:
+/home/ciank/.cdsapirc # wsl
+ C:/Users/ciank/.cdsapirc # windows
 ## Directory Structure
 
 Important folders and files in the project:

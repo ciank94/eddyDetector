@@ -1,12 +1,10 @@
 # eddyDetector/main/detect.py
 # ===========Section 0: imports=============
-import numpy as np
-import matplotlib.pyplot as plt
-from eddyDetector import *
+from eddydetector import *
 
 # ==========Section 1: Parameters============= (stuff I will change a lot, others in a ./input_files/yaml file)
 datetime_start = "2017-01-25"
-datetime_end = "2017-02-01"
+datetime_end = "2017-01-26"
 input_filepath = './input_files' # input folder for sea-level data (SLD)
 output_filepath = './output_files' # output folder for eddy properties
 lat_bounds = (-73, -50) # latitude bounds

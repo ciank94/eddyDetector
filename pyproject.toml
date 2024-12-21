@@ -1,18 +1,22 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "eddyDetector"
+[tool.poetry]
+name = "eddydetector"
 version = "0.1.0"
-description = "A package for detecting eddies from altimetry data"
+description = "package for detecting eddies from altimetry data"
+authors = ["Cian Kelly <cianrkelly23@gmail.com>"]
+license = "MIT"
 readme = "README.md"
-requires-python = ">=3.6"
-authors = [
-    { name = "Cian Kelly", email = "cianrkelly23@gmail.com" }
-]
-dependencies = []
 
-[tool.setuptools]
-packages = ["eddyDetector"]
+[tool.poetry.dependencies]
+python = ">=3.11.9,<4.0"
+cdsapi = "^0.7.5"
+numpy = "<2.0.0,>=1.23.0"
+xarray = "^2024.11.0"
+scipy = "^1.14.1"
+matplotlib = "^3.10.0"
+netcdf4 = "^1.7.2"
+cartopy = "^0.24.1"
 
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
