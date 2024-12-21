@@ -23,8 +23,7 @@ interpolator = InterpolateSLD(ncfile_subset) # initiate interpolator with latitu
 data = interpolator.interpolate_grid(scale_factor_interpolation) # interpolate data with scale factor
 
 #==========Section 2: Detect eddies and store properties=============
-detector = DetectEddiesSLD(data) # initiate eddy detector object
-detector.okubo_weiss() # calculate Okubo-Weiss field and filter with threshold
+detector = DetectEddiesSLD(data) # initiate eddy detector object and calculate Okubo-Weiss field and filter with threshold
 eddy_info = detector.eddy_algorithm() # detect eddies using global minima in the Okubo-Weiss field
 output = OutputSLD(eddy_info) # initiate output object with eddy properties
 breakpoint()

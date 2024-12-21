@@ -18,7 +18,10 @@ class DetectEddiesSLD:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info(f"================={self.__class__.__name__}=====================")
         self.logger.info(f"Initializing {self.__class__.__name__}")
+        self.okubo_weiss()
         self.previous_point = None  # Store the previously selected point
+        self.sorted_points = None  # Store the sorted points (non-nan and non-zero ow)
+        self.ow_mask = None # store the ow mask
         return
 
     def okubo_weiss(self):
@@ -73,40 +76,53 @@ class DetectEddiesSLD:
         Detect eddies using global minima in the Okubo-Weiss field.
         Invalid centers are screened out by masking the point.
         Valid centers result in masking the entire eddy region.
-
-        :param max_eddies: maximum number of eddies to detect (default: 500)
         :return: 
             List of detected eddy information dictionaries
         """
         detected_eddies = []
-        ow_mask = self.ow.copy()
+        self.ow_mask = self.ow.copy()
         counter = -1
         max_eddies=500
+        isEddy = False
+        self.sort_indices()
         
-        while len(detected_eddies) < max_eddies and counter < 1000:
+        while len(detected_eddies) < max_eddies and counter < 10000:
             counter += 1
 
             # find current global minimum
-            status, y, x = self.find_global_minima(ow_mask, n_minima=5)
+            status, y, x = self.find_global_minima(n_minima=5)
             if status == 'break':
                 break
 
             # Try to detect an eddy at this minimum
-            [isEddy, eddy_info, ow_new] = self.screen_eddy(ow_mask, y, x)
+            [isEddy, eddy_info] = self.screen_eddy(y, x)
 
             if isEddy:
-                # Valid center - mask the entire eddy region
-                ow_mask = ow_new
+                #self.persistent_mask = ow_new.copy()  # Update the persistent mask
                 detected_eddies.append(eddy_info)
                 self.logger.info(f"Accepted eddy center at y, x: ({y}, {x}) for step {counter}")
             else:
                 # Invalid center - just mask this single point
-                ow_mask[y:y+2, x:x+2] = np.nan
+                self.ow_mask[y:y+2, x:x+2] = np.nan
+                #self.persistent_mask[y:y+2, x:x+2] = np.nan  # Update the persistent mask
         
         self.logger.info(f"Found {len(detected_eddies)} eddies")
         return detected_eddies
 
-    def find_global_minima(self, ow_mask, n_minima=5):
+    def sort_indices(self):
+        """
+        Sort indices of the Okubo-Weiss field- and subset it to remove nans and zeros
+        """
+        flat_ow = self.ow_mask.flatten()
+        sorted_points = np.argsort(flat_ow)
+        sorted_indices = (sorted_points[~np.isnan(flat_ow[sorted_points]) & (flat_ow[sorted_points] != 0)])
+        self.sorted_indices = sorted_indices.tolist()
+        # test: np.unravel_index(self.sorted_indices[0], ow_mask.shape)
+        # self.sorted_indices[:5]
+        # if previous point is None: select first, otherwise select based on distance and del self.sorted_indices[index]
+        return
+
+    def find_global_minima(self, n_minima=5):
         """
         Find global minima in the Okubo-Weiss field and select the furthest one from the previous point.
 
@@ -116,20 +132,28 @@ class DetectEddiesSLD:
             status: str - 'break' to end loop, 'ok' to proceed
             y, x: coordinates of the selected minimum
         """
-        if np.all(np.isnan(ow_mask)):
+        if np.all(np.isnan(self.ow_mask)):
+            self.logger.warning("Could not find any minima in the Okubo-Weiss field.")
             return 'break', None, None
 
-        # Find the n smallest values and their indices
-        flat_indices = np.argpartition(ow_mask.flatten(), n_minima)[:n_minima]
+        if len(self.sorted_indices) < n_minima:
+            self.logger.warning(f"Could not find enough minima in the Okubo-Weiss field. Found {len(self.sorted_indices)} minima.")
+            return 'break', None, None
+
+        flat_indices = self.sorted_indices[:n_minima]
+
         valid_points = []
-        
+        s_index = []
+        c_index = -1
         for idx in flat_indices:
-            y, x = np.unravel_index(idx, ow_mask.shape)
+            c_index += 1
+            y, x = np.unravel_index(idx, self.ow_mask.shape)
             # Check if point is too close to boundaries
-            if y <= 3 or x <= 3 or y >= ow_mask.shape[0]-1 or x >= ow_mask.shape[1]-1:
-                ow_mask[y, x] = np.nan
-                continue
-            valid_points.append((y, x))
+            if y <= 3 or x <= 3 or y >= self.ow_mask.shape[0]-1 or x >= self.ow_mask.shape[1]-1:
+                self.sorted_indices.remove(idx)
+            else:
+                valid_points.append((y, x))
+                s_index.append(c_index)
 
         if not valid_points:
             return 'break', None, None
@@ -137,6 +161,7 @@ class DetectEddiesSLD:
         # If this is the first point or no previous point exists
         if self.previous_point is None:
             y, x = valid_points[0]  # Take the first valid point
+            del self.sorted_indices[0]
         else:
             # Calculate distances from previous point to all valid points
             prev_y, prev_x = self.previous_point
@@ -144,31 +169,32 @@ class DetectEddiesSLD:
             # Select the point with maximum distance
             max_dist_idx = np.argmax(distances)
             y, x = valid_points[max_dist_idx]
+            # Remove the selected point from the list
+            del self.sorted_indices[s_index[max_dist_idx]]
 
         # Update previous point
         self.previous_point = (y, x)
         return 'ok', y, x
 
-    def screen_eddy(self, ow, center_y, center_x):
+    def screen_eddy(self, center_y, center_x):
         """Detect and mask an eddy at the specified center point.
         
-        :param ow: Okubo-Weiss parameter field
         :param center_y: y-coordinate of center
         :param center_x: x-coordinate of center
-        :return: (is_eddy, eddy_info, masked_ow)
+        :return: (is_eddy, eddy_info)
         """
         radius = 20
         m_points = 32
         # Check if center is already masked
-        if np.isnan(ow[int(center_y), int(center_x)]):
-            return False, None, ow
+        if np.isnan(self.ow_mask[int(center_y), int(center_x)]):
+            return False, None
             
         # Get OW extent in x and y directions
-        y_extent = ow[:, int(center_x)]
-        x_extent = ow[int(center_y), :]
+        y_extent = self.ow_mask[:, int(center_x)]
+        x_extent = self.ow_mask[int(center_y), :]
         
         # Normalize by center value to find extent
-        c_value = ow[int(center_y), int(center_x)]
+        c_value = self.ow_mask[int(center_y), int(center_x)]
         x_norm = x_extent/c_value
         y_norm = y_extent/c_value
         
@@ -201,7 +227,7 @@ class DetectEddiesSLD:
                 
         # Check if we found boundaries in both directions
         if len(x_b) != 2 or len(y_b) != 2:
-            return False, None, ow
+            return False, None
             
         # Calculate the semi-axes
         x_radius = (x_b[1] - x_b[0]) / 2
@@ -222,24 +248,20 @@ class DetectEddiesSLD:
         # Check if variables are symmetric across the center of the eddy
         symmetry_check = self.symmetry_check(contour_points)
         if not symmetry_check:
-            return False, None, ow
+            return False, None
         
         # Create mask using contour points
-        mask = np.zeros_like(ow, dtype=bool)
+        mask = np.zeros_like(self.ow_mask, dtype=bool)
         
         # Create a grid of points to check
-        y_indices, x_indices = np.mgrid[:ow.shape[0], :ow.shape[1]]
+        y_indices, x_indices = np.mgrid[:self.ow_mask.shape[0], :self.ow_mask.shape[1]]
         points = np.column_stack((y_indices.ravel(), x_indices.ravel()))
         
         # Check which points are inside the contour
         inside_points = Path(contour_points).contains_points(points)
-        mask = inside_points.reshape(ow.shape)
+        mask = inside_points.reshape(self.ow_mask.shape)
+        self.ow_mask[mask] = np.nan
         
-        
-        # Apply the mask
-        new_ow = ow.copy()
-        new_ow[mask] = np.nan
-
         # Check if anticyclone or cyclone
         if np.sum(self.vorticity[mask]) > 0:
             eddy_cylone = "anticyclonic"
@@ -263,7 +285,7 @@ class DetectEddiesSLD:
             'ow': np.nanmean(self.ow[mask]),
             'ow_std': np.nanstd(self.ow[mask])
         }
-        return True, eddy_info, new_ow
+        return True, eddy_info
 
     def symmetry_check(self, points):
         """

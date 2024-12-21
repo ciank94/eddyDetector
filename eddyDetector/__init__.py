@@ -1,4 +1,4 @@
-from .eddy import DetectEddiesSLD
+from .eddy import DetectEddiesSLD, OutputSLD
 from .reader import FileExplorerSLD, ReaderSLD
 from .plotting import Plotting
 from .interpolate import InterpolateSLD
